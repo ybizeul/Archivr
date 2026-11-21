@@ -6,7 +6,7 @@ import { IconChevronDown, IconChevronLeft, IconChevronRight, IconChevronUp } fro
 import { Link, useSearchParams } from 'react-router-dom'
 import {
   useCorrespondents,
-  useDocuments,
+  useInboxQueue,
   useFolders,
   useSuggestions,
   useTags,
@@ -32,12 +32,18 @@ interface Command {
 export function TriagePage() {
   const [params, setParams] = useSearchParams()
   const isMobile = useMediaQuery('(max-width: 767px)', undefined, { getInitialValueInEffect: false }) ?? false
-  const queue = useDocuments({ inbox: true, sort: 'oldest', limit: 200 })
+  const queue = useInboxQueue()
+  const { hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage } = queue
   const patch = usePatchDocument()
   const [command, setCommand] = useState<Command | null>(null)
 
-  const items = queue.data?.items ?? []
-  const total = queue.data?.total ?? 0
+  // Load the rest of the inbox in the background, one page at a time, until the queue is complete.
+  useEffect(() => {
+    if (hasNextPage && !isFetchingNextPage && !isFetchNextPageError) void fetchNextPage()
+  }, [hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage])
+
+  const items = queue.items
+  const total = queue.total
   const selectedId = Number(params.get('doc')) || 0
   const index = Math.max(0, items.findIndex((d) => d.id === selectedId))
   const current: Document | undefined = items[index]

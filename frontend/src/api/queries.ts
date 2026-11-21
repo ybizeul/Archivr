@@ -1,6 +1,7 @@
 // TanStack Query hooks for the Archivr API. Query keys are kept here so that
 // every mutation invalidates exactly the views it changes.
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMemo } from 'react'
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from './client'
 import type {
   AuthSettings,
@@ -94,6 +95,53 @@ export function useDocuments(f: DocFilters, options?: { enabled?: boolean }) {
     placeholderData: (prev) => prev,
     enabled: options?.enabled ?? true,
   })
+}
+
+// The server returns at most 200 documents per request.
+const INBOX_PAGE_SIZE = 200
+
+/**
+ * The whole inbox, oldest first. Pages are loaded one after another: the caller keeps
+ * calling fetchNextPage while hasNextPage is true, so every document ends up in items.
+ */
+export function useInboxQueue() {
+  const query = useInfiniteQuery({
+    queryKey: ['documents', 'inbox-queue'] as const,
+    queryFn: ({ pageParam }) =>
+      api.get<Page<Document>>(
+        `/documents${toQuery({ inbox: true, sort: 'oldest', limit: INBOX_PAGE_SIZE, offset: pageParam })}`,
+      ),
+    initialPageParam: 0,
+    getNextPageParam: (last) => {
+      const loaded = last.offset + last.items.length
+      return last.items.length > 0 && loaded < last.total ? loaded : undefined
+    },
+  })
+
+  // Pages can shift while documents are being filed, so the same document may appear twice.
+  const items = useMemo(() => {
+    const seen = new Set<number>()
+    const out: Document[] = []
+    for (const page of query.data?.pages ?? []) {
+      for (const d of page.items) {
+        if (!seen.has(d.id)) {
+          seen.add(d.id)
+          out.push(d)
+        }
+      }
+    }
+    return out
+  }, [query.data])
+
+  return {
+    items,
+    total: query.data?.pages.at(-1)?.total ?? 0,
+    isPending: query.isPending,
+    hasNextPage: query.hasNextPage,
+    isFetchingNextPage: query.isFetchingNextPage,
+    isFetchNextPageError: query.isFetchNextPageError,
+    fetchNextPage: query.fetchNextPage,
+  }
 }
 
 export function useDocument(id: number | undefined) {
