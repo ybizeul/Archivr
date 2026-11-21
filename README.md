@@ -29,10 +29,10 @@ Without Tesseract the app still runs. Documents are marked OCR `skipped`, and **
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `LISTEN_ADDR` | `:8080` | Address the server listens on. |
-| `PUBLIC_URL` | derived from the request | External address, for the SSO callback and links. Set it behind a proxy. |
+| `PUBLIC_URL` | derived from the request | External address, for the SSO callback and links. When unset, derived from the request, using `X-Forwarded-Host` and `X-Forwarded-Proto` if `TRUST_PROXY` is set. |
 | `DATA_DIR` | `./data` | Holds `archivr.db`, `documents/`, `trash/`, `cache/`, and `ingest/` by default. |
 | `WATCH_DIR` | `DATA_DIR/ingest` | Folder polled for new files. Imported files move to `.imported/`, rejects to `.rejected/`. |
-| `TRUST_PROXY` | off | Set to any value behind a proxy you control. Reads `X-Forwarded-For` and `X-Forwarded-Proto`. |
+| `TRUST_PROXY` | off | Set to any value behind a proxy you control. Reads `X-Forwarded-For`, `X-Forwarded-Host` and `X-Forwarded-Proto`. |
 | `JWT_SECRET` | random per run | Signs session cookies. Set it, or everyone is signed out on restart. |
 | `INIT_ADMIN_EMAIL` | `admin@archivr.local` | The first admin account. |
 | `INIT_PASSWORD` | unset | Bootstrap password. **Applied on every start while set.** It resets that account's password and role, so remove it once you can sign in. |

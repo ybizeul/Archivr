@@ -30,7 +30,7 @@ type Deps struct {
 	OIDC       *auth.OIDCService
 	Limiter    *auth.LoginLimiter
 	PublicURL  string // external base URL, e.g. https://archive.example.org. Derived from the request when empty
-	TrustProxy bool   // trust X-Forwarded-For for the client IP. Enable only behind a proxy you control
+	TrustProxy bool   // trust X-Forwarded-For/-Host/-Proto for the client IP and public URL. Enable only behind a proxy you control
 	Now        func() time.Time
 
 	Archive   *archive.Service
@@ -192,7 +192,30 @@ func (s *server) publicBase(r *http.Request) string {
 	if isHTTPS(r) {
 		scheme = "https"
 	}
-	return scheme + "://" + r.Host
+	host := r.Host
+	if s.TrustProxy {
+		// Behind a reverse proxy, the browser-facing host is in X-Forwarded-Host.
+		// Take the first entry when several proxies have appended to it.
+		if fh := firstForwardedValue(r.Header.Get("X-Forwarded-Host")); fh != "" {
+			host = fh
+		}
+		if fp := firstForwardedValue(r.Header.Get("X-Forwarded-Proto")); fp != "" {
+			if strings.EqualFold(fp, "https") {
+				scheme = "https"
+			} else if strings.EqualFold(fp, "http") {
+				scheme = "http"
+			}
+		}
+	}
+	return scheme + "://" + host
+}
+
+// firstForwardedValue returns the first entry of a comma-separated forwarded header.
+func firstForwardedValue(v string) string {
+	if i := strings.Index(v, ","); i >= 0 {
+		v = v[:i]
+	}
+	return strings.TrimSpace(v)
 }
 
 func (s *server) clientIP(r *http.Request) string {
