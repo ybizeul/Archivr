@@ -320,11 +320,11 @@ function RuleEditor({
 
   return (
     <Stack gap="xs">
-      <Group justify="space-between" align="flex-start" wrap="nowrap">
+      <Group justify="space-between" align="flex-start" wrap="wrap">
         <Text fw={500} size="sm">
           File by tag
         </Text>
-        <Group gap="xs" wrap="nowrap">
+        <Group gap="xs" wrap="wrap">
           <NewFolder disabled={disabled} onCreated={() => {}} />
           <Tooltip label="Save the connection first" disabled={canGetTags}>
             <Button
@@ -366,7 +366,7 @@ function RuleEditor({
         </Text>
       )}
       {rules.map((r, i) => (
-        <Group key={i} gap="xs" align="flex-start" wrap="nowrap">
+        <Group key={i} gap="xs" align="flex-start" wrap="nowrap" className="ax-rule-row">
           <Autocomplete
             aria-label={`Tag for rule ${i + 1}`}
             placeholder="Paperless tag"
@@ -506,7 +506,7 @@ function TagTable({
 
   return (
     <Stack gap="xs" p="sm" style={{ border: '1px solid var(--mantine-color-default-border)', borderRadius: 'var(--mantine-radius-sm)' }}>
-      <Group justify="space-between" wrap="nowrap">
+      <Group justify="space-between" wrap="wrap">
         <Text size="sm" fw={500}>
           Tags in Paperless
           <Text span size="sm" c="dimmed">
@@ -530,7 +530,7 @@ function TagTable({
         onChange={(e) => setFilter(e.currentTarget.value)}
       />
       <ScrollArea.Autosize mah={320}>
-        <Table verticalSpacing={4} stickyHeader>
+        <Table verticalSpacing={4} stickyHeader className="ax-stack-table">
           <Table.Thead>
             <Table.Tr>
               <Table.Th>Tag</Table.Th>
@@ -545,13 +545,13 @@ function TagTable({
               const folder = i >= 0 ? rules[i].folder : null
               return (
                 <Table.Tr key={t.name}>
-                  <Table.Td>{t.name}</Table.Td>
-                  <Table.Td ta="right">
+                  <Table.Td data-label="Tag" className="ax-wrap-cell">{t.name}</Table.Td>
+                  <Table.Td ta="right" data-label="Documents">
                     <Text size="sm" c="dimmed">
                       {t.document_count.toLocaleString()}
                     </Text>
                   </Table.Td>
-                  <Table.Td>
+                  <Table.Td data-label="Folder">
                     <Select
                       size="xs"
                       aria-label={`Folder for tag ${t.name}`}
@@ -564,7 +564,7 @@ function TagTable({
                       disabled={disabled}
                     />
                   </Table.Td>
-                  <Table.Td>
+                  <Table.Td className="ax-actions-cell">
                     <NewFolder
                       compact
                       defaultName={t.name}

@@ -64,7 +64,7 @@ export function UsersSettings() {
       {users.isPending ? (
         <Loader size="sm" />
       ) : (
-        <Table verticalSpacing="sm">
+        <Table verticalSpacing="sm" className="ax-stack-table">
           <Table.Thead>
             <Table.Tr>
               <Table.Th>Name</Table.Th>
@@ -94,7 +94,7 @@ function UserRowView({ row, isSelf }: { row: UserRow; isSelf: boolean }) {
 
   return (
     <Table.Tr>
-      <Table.Td>
+      <Table.Td data-label="Name">
         <Text size="sm" fw={600}>
           {row.name || '—'}
           {isSelf && (
@@ -104,8 +104,8 @@ function UserRowView({ row, isSelf }: { row: UserRow; isSelf: boolean }) {
           )}
         </Text>
       </Table.Td>
-      <Table.Td className="ax-mono">{row.email}</Table.Td>
-      <Table.Td>
+      <Table.Td className="ax-mono ax-wrap-cell" data-label="Email">{row.email}</Table.Td>
+      <Table.Td data-label="Role">
         <Select
           aria-label={`Role of ${row.email}`}
           data={ROLES}
@@ -117,12 +117,12 @@ function UserRowView({ row, isSelf }: { row: UserRow; isSelf: boolean }) {
           onChange={(v) => v && v !== row.role && update.mutate({ id: row.id, role: v }, { onError: fail("Couldn't change the role") })}
         />
       </Table.Td>
-      <Table.Td>
+      <Table.Td data-label="Sign-in">
         <Badge variant="outline" color={row.has_password ? 'gray' : 'prussian'} radius="sm">
           {row.has_password ? 'Password' : 'SSO only'}
         </Badge>
       </Table.Td>
-      <Table.Td>
+      <Table.Td className="ax-actions-cell">
         <Group gap={4} wrap="nowrap" justify="flex-end">
           <Tooltip label="Set a new password">
             <ActionIcon variant="subtle" color="gray" aria-label={`Set password for ${row.email}`} onClick={() => setResetOpen(true)}>

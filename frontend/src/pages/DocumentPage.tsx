@@ -199,7 +199,7 @@ function DocumentView({ doc }: { doc: DocumentDetail }) {
           </Box>
 
           <Box>
-            <Group justify="space-between" wrap="nowrap" mb="xs">
+            <Group justify="space-between" wrap="wrap" mb="xs">
               <Group gap="xs" wrap="nowrap">
                 <Text className="ax-mono ax-accent" size="xs" tt="uppercase">
                   Text (OCR)

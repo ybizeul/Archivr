@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { ActionIcon, Autocomplete, Box, Button, Group, Loader, ScrollArea, Select, Stack, TagsInput, Text, TextInput, Title, Tooltip, UnstyledButton } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
 import { notifications } from '@mantine/notifications'
-import { IconChevronDown, IconChevronUp } from '@tabler/icons-react'
+import { IconChevronDown, IconChevronLeft, IconChevronRight, IconChevronUp } from '@tabler/icons-react'
 import { Link, useSearchParams } from 'react-router-dom'
 import {
   useCorrespondents,
@@ -31,7 +31,7 @@ interface Command {
 
 export function TriagePage() {
   const [params, setParams] = useSearchParams()
-  const isMobile = useMediaQuery('(max-width: 767px)') ?? false
+  const isMobile = useMediaQuery('(max-width: 767px)', undefined, { getInitialValueInEffect: false }) ?? false
   const queue = useDocuments({ inbox: true, sort: 'oldest', limit: 200 })
   const patch = usePatchDocument()
   const [command, setCommand] = useState<Command | null>(null)
@@ -149,7 +149,15 @@ export function TriagePage() {
   if (isMobile) {
     return (
       <Box className="ax-triage ax-triage-mobile">
-        <QueueStrip items={items} selectedId={viewDoc.id} onSelect={select} />
+        <QueueStepper
+          items={items}
+          index={index}
+          total={total}
+          selectedId={viewDoc.id}
+          busy={filed !== null}
+          onSelect={select}
+          onMove={move}
+        />
         <Sheet {...sheetProps} />
         <Box className="ax-sheet-panel">{card}</Box>
       </Box>
@@ -241,24 +249,44 @@ function QueueList({
   )
 }
 
-function QueueStrip({ items, selectedId, onSelect }: { items: Document[]; selectedId: number; onSelect: (id: number) => void }) {
+/** Phone queue control: step through the inbox with arrows, or jump to any document from the list. */
+function QueueStepper({
+  items,
+  index,
+  total,
+  selectedId,
+  busy,
+  onSelect,
+  onMove,
+}: {
+  items: Document[]
+  index: number
+  total: number
+  selectedId: number
+  busy: boolean
+  onSelect: (id: number) => void
+  onMove: (delta: number) => void
+}) {
   return (
-    <ScrollArea type="auto" className="ax-queue-strip" aria-label="Queue">
-      <Group gap={6} wrap="nowrap">
-        {items.map((d) => (
-          <Tooltip key={d.id} label={`No. ${d.id} · ${d.title}`}>
-            <UnstyledButton
-              className={`ax-strip-item ax-mono${d.id === selectedId ? ' selected' : ''}`}
-              onClick={() => onSelect(d.id)}
-              aria-current={d.id === selectedId ? 'true' : undefined}
-              aria-label={`No. ${d.id}, ${d.title}`}
-            >
-              {d.id}
-            </UnstyledButton>
-          </Tooltip>
-        ))}
-      </Group>
-    </ScrollArea>
+    <Group className="ax-queue-strip" gap={6} wrap="nowrap" align="flex-end" aria-label="Queue">
+      <ActionIcon variant="default" size="lg" aria-label="Previous document" onClick={() => onMove(-1)} disabled={index === 0 || busy}>
+        <IconChevronLeft size={18} stroke={1.6} />
+      </ActionIcon>
+      <Select
+        className="ax-queue-select"
+        aria-label={`Queue, ${Math.max(1, index + 1)} of ${total}`}
+        data={items.map((d) => ({ value: String(d.id), label: `No. ${d.id} · ${d.title}` }))}
+        value={String(selectedId)}
+        onChange={(v) => v && onSelect(Number(v))}
+        allowDeselect={false}
+        disabled={busy}
+        size="sm"
+        style={{ flex: 1, minWidth: 0 }}
+      />
+      <ActionIcon variant="default" size="lg" aria-label="Next document" onClick={() => onMove(1)} disabled={index >= items.length - 1 || busy}>
+        <IconChevronRight size={18} stroke={1.6} />
+      </ActionIcon>
+    </Group>
   )
 }
 

@@ -85,13 +85,13 @@ function MailForm({ initial }: { initial: IMAPSettings }) {
           description={initial.imap_password_set ? 'Saved. Leave the mask as it is to keep it.' : undefined}
         />
       </Group>
-      <Group align="flex-end" wrap="nowrap">
+      <Group align="flex-end" wrap="wrap">
         <Autocomplete
           label="Mailbox"
           value={mailbox}
           onChange={setMailbox}
           data={mailboxes.length ? mailboxes : ['INBOX']}
-          style={{ flex: 1 }}
+          style={{ flex: '1 1 200px' }}
         />
         <Button variant="default" onClick={() => loadMailboxes.mutate()} loading={loadMailboxes.isPending}>
           List mailboxes

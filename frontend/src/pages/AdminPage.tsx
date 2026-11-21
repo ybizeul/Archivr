@@ -1,5 +1,5 @@
 import { Navigate, useSearchParams } from 'react-router-dom'
-import { Stack, Tabs, Title, Text } from '@mantine/core'
+import { Select, Stack, Tabs, Title, Text } from '@mantine/core'
 import { useAuth } from '../auth/context'
 import { CatalogSettings } from './admin/Catalog'
 import { MailSettings } from './admin/Mail'
@@ -10,6 +10,15 @@ import { UsersSettings } from './admin/Users'
 
 const TABS = ['signin', 'mail', 'ocr', 'catalog', 'paperless', 'users'] as const
 type TabKey = (typeof TABS)[number]
+
+const TAB_LABELS: { value: TabKey; label: string }[] = [
+  { value: 'signin', label: 'Sign-in' },
+  { value: 'mail', label: 'Mail' },
+  { value: 'ocr', label: 'Text recognition' },
+  { value: 'catalog', label: 'Types and tags' },
+  { value: 'paperless', label: 'Paperless' },
+  { value: 'users', label: 'Users' },
+]
 
 export function AdminPage() {
   const { user } = useAuth()
@@ -23,15 +32,23 @@ export function AdminPage() {
   const tab: TabKey = requested && (TABS as readonly string[]).includes(requested) ? requested : 'signin'
 
   return (
-    <Stack gap="lg" p="xl" className="ax-admin">
+    <Stack gap="lg" p={{ base: 'sm', sm: 'xl' }} className="ax-admin">
       <div>
         <Title order={2}>Admin</Title>
         <Text c="dimmed" size="sm">
           Sign-in, mail intake, text recognition, document types, Paperless import and accounts.
         </Text>
       </div>
+      <Select
+        hiddenFrom="sm"
+        aria-label="Admin section"
+        data={TAB_LABELS}
+        value={tab}
+        onChange={(v) => setParams({ tab: v ?? 'signin' }, { replace: true })}
+        allowDeselect={false}
+      />
       <Tabs value={tab} onChange={(v) => setParams({ tab: v ?? 'signin' }, { replace: true })} keepMounted={false}>
-        <Tabs.List mb="lg">
+        <Tabs.List mb="lg" visibleFrom="sm">
           <Tabs.Tab value="signin">Sign-in</Tabs.Tab>
           <Tabs.Tab value="mail">Mail</Tabs.Tab>
           <Tabs.Tab value="ocr">Text recognition</Tabs.Tab>

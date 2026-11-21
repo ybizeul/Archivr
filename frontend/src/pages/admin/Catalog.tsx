@@ -45,7 +45,7 @@ function TypesSection() {
       {types.isPending ? (
         <Loader size="sm" />
       ) : (
-        <Table verticalSpacing="xs">
+        <Table verticalSpacing="xs" className="ax-stack-table">
           <Table.Thead>
             <Table.Tr>
               <Table.Th>Name</Table.Th>
@@ -86,14 +86,14 @@ function TypeRow({ type }: { type: DocType }) {
 
   return (
     <Table.Tr>
-      <Table.Td>
+      <Table.Td data-label="Name">
         <TextInput value={name} onChange={(e) => setName(e.currentTarget.value)} aria-label={`Name of ${type.name}`} size="sm" />
       </Table.Td>
-      <Table.Td>
+      <Table.Td data-label="Colour">
         <ColorInput value={color} onChange={setColor} format="hex" size="sm" w={130} aria-label={`Colour of ${type.name}`} />
       </Table.Td>
-      <Table.Td className="ax-mono">{type.document_count}</Table.Td>
-      <Table.Td>
+      <Table.Td className="ax-mono" data-label="Documents">{type.document_count}</Table.Td>
+      <Table.Td className="ax-actions-cell">
         <Group gap={4} wrap="nowrap" justify="flex-end">
           {dirty && (
             <Button size="xs" onClick={save} loading={update.isPending} disabled={!name.trim()}>
@@ -133,7 +133,7 @@ function TagsSection() {
           Tags appear here once a document has one.
         </Text>
       ) : (
-        <Table verticalSpacing="xs">
+        <Table verticalSpacing="xs" className="ax-stack-table">
           <Table.Thead>
             <Table.Tr>
               <Table.Th>Tag</Table.Th>
@@ -158,7 +158,7 @@ function TagRow({ tag }: { tag: Tag }) {
   const dirty = name.trim() !== tag.name && name.trim() !== ''
   return (
     <Table.Tr>
-      <Table.Td>
+      <Table.Td data-label="Tag">
         <TextInput
           value={name}
           onChange={(e) => setName(e.currentTarget.value)}
@@ -167,8 +167,8 @@ function TagRow({ tag }: { tag: Tag }) {
           size="sm"
         />
       </Table.Td>
-      <Table.Td className="ax-mono">{tag.document_count}</Table.Td>
-      <Table.Td>
+      <Table.Td className="ax-mono" data-label="Documents">{tag.document_count}</Table.Td>
+      <Table.Td className="ax-actions-cell">
         <Group gap={4} wrap="nowrap" justify="flex-end">
           {dirty && (
             <Button size="xs" onClick={() => rename.mutate({ id: tag.id, name: name.trim() })} loading={rename.isPending}>

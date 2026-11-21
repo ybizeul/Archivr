@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { ActionIcon, AppShell, Badge, Box, Button, Group, Menu, Text, TextInput, Tooltip } from '@mantine/core'
-import { useDebouncedValue } from '@mantine/hooks'
+import { useDebouncedValue, useMediaQuery } from '@mantine/hooks'
 import { Spotlight, spotlight, type SpotlightActionData } from '@mantine/spotlight'
-import { IconCalendar, IconCheck, IconLogout, IconSearch } from '@tabler/icons-react'
+import { IconCalendar, IconCheck, IconFolders, IconInbox, IconLogout, IconSearch, IconSettings } from '@tabler/icons-react'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/context'
 import { useDocuments, useInboxCount } from '../api/queries'
@@ -16,22 +16,23 @@ export function AppLayout() {
   const inbox = useInboxCount()
   const navigate = useNavigate()
   const dateLocalePref = useDateLocalePref()
+  const isMobile = useMediaQuery('(max-width: 767px)', undefined, { getInitialValueInEffect: false }) ?? false
 
   const nav = [
-    { to: '/', label: 'Inbox', active: pathname === '/', count: inbox.data?.count },
-    { to: '/library', label: 'Library', active: pathname.startsWith('/library') || pathname.startsWith('/documents') },
-    ...(user?.role === 'admin' ? [{ to: '/admin', label: 'Admin', active: pathname.startsWith('/admin') }] : []),
+    { to: '/', label: 'Inbox', icon: <IconInbox size={22} stroke={1.6} />, active: pathname === '/', count: inbox.data?.count },
+    { to: '/library', label: 'Library', icon: <IconFolders size={22} stroke={1.6} />, active: pathname.startsWith('/library') || pathname.startsWith('/documents') },
+    ...(user?.role === 'admin' ? [{ to: '/admin', label: 'Admin', icon: <IconSettings size={22} stroke={1.6} />, active: pathname.startsWith('/admin') }] : []),
   ]
 
   return (
-    <AppShell header={{ height: 56 }} padding={0}>
+    <AppShell header={{ height: 56 }} footer={{ height: 56, collapsed: !isMobile }} padding={0}>
       <AppShell.Header>
         <Box className="ax-topbar">
           <Group gap="lg" wrap="nowrap" className="ax-topbar-side">
-            <Text component={Link} to="/" fw={700} size="lg" c="prussian.6" className="ax-brand" visibleFrom="sm">
+            <Text component={Link} to="/" fw={700} size="lg" c="prussian.6" className="ax-brand">
               Archivr
             </Text>
-            <Group gap={4} wrap="nowrap" component="nav" aria-label="Main">
+            <Group gap={4} wrap="nowrap" component="nav" aria-label="Main" visibleFrom="sm">
               {nav.map((item) => (
                 <Button
                   key={item.to}
@@ -105,6 +106,26 @@ export function AppLayout() {
         {/* Keyed so pages redraw their dates when the date format changes. */}
         <Outlet key={dateLocalePref} />
       </AppShell.Main>
+
+      {isMobile && (
+        <AppShell.Footer className="ax-bottomnav-shell">
+          <nav className="ax-bottomnav" aria-label="Main">
+            {nav.map((item) => (
+              <Link key={item.to} to={item.to} className={`ax-bottomnav-item${item.active ? ' active' : ''}`} aria-current={item.active ? 'page' : undefined}>
+                <span className="ax-bottomnav-icon">
+                  {item.icon}
+                  {item.count ? (
+                    <Badge size="xs" color="carmine" variant="filled" radius="sm" className="ax-mono ax-bottomnav-badge">
+                      {item.count}
+                    </Badge>
+                  ) : null}
+                </span>
+                <span>{item.label}</span>
+              </Link>
+            ))}
+          </nav>
+        </AppShell.Footer>
+      )}
 
       <ArchiveSpotlight />
     </AppShell>
