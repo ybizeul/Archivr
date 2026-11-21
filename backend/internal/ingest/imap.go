@@ -248,8 +248,10 @@ func (p *IMAPPoller) processMessage(ctx context.Context, raw []byte, sum *PollSu
 		switch res.Status {
 		case Imported:
 			sum.Imported++
+			p.logger().Info("imap imported", "file", a.Filename, "document", res.Document.ID)
 		case Duplicate:
 			sum.Duplicates++
+			p.logger().Info("imap duplicate, already filed", "file", a.Filename, "document", res.Document.ID)
 		case AlreadyImported:
 			sum.Skipped++
 		default:
