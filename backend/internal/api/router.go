@@ -207,6 +207,10 @@ func (s *server) publicBase(r *http.Request) string {
 			}
 		}
 	}
+	// The default HTTPS port is implied, so drop it from the URL.
+	if scheme == "https" {
+		host = strings.TrimSuffix(host, ":443")
+	}
 	return scheme + "://" + host
 }
 
