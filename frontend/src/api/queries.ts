@@ -101,7 +101,7 @@ export function useDocuments(f: DocFilters, options?: { enabled?: boolean }) {
 const INBOX_PAGE_SIZE = 200
 
 /**
- * The whole inbox, oldest first. Pages are loaded one after another: the caller keeps
+ * The whole inbox, most recently imported first. Pages are loaded one after another: the caller keeps
  * calling fetchNextPage while hasNextPage is true, so every document ends up in items.
  */
 export function useInboxQueue() {
@@ -109,7 +109,7 @@ export function useInboxQueue() {
     queryKey: ['documents', 'inbox-queue'] as const,
     queryFn: ({ pageParam }) =>
       api.get<Page<Document>>(
-        `/documents${toQuery({ inbox: true, sort: 'oldest', limit: INBOX_PAGE_SIZE, offset: pageParam })}`,
+        `/documents${toQuery({ inbox: true, sort: 'newest', limit: INBOX_PAGE_SIZE, offset: pageParam })}`,
       ),
     initialPageParam: 0,
     getNextPageParam: (last) => {
