@@ -1,0 +1,626 @@
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--mantine-color-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Mantine's body token, pinned to the approved surfaces. */
+html[data-mantine-color-scheme='light'] {
+  --mantine-color-body: #e9eef1;
+}
+
+html[data-mantine-color-scheme='dark'] {
+  --mantine-color-body: #0b1b2e;
+}
+
+html[data-mantine-color-scheme='light'] body {
+  background: #e9eef1;
+}
+
+html[data-mantine-color-scheme='dark'] body {
+  background: #0b1b2e;
+}
+
+/* Cyanotype tokens. Light values are the approved board; dark values are the derived lifts. */
+html[data-mantine-color-scheme='light'] {
+  --ax-mist: #e9eef1;
+  --ax-sheet: #f8fafb;
+  --ax-ink: #0f2a4a;
+  --ax-accent: #1f4e79;
+  --ax-rule: #c5d0d8;
+  --ax-stamp: #b0306a;
+  --ax-oxide: #a8402a;
+  --ax-muted: #4a5e72;
+  --ax-selected: #dce8f2;
+  --ax-shadow: 0 1px 2px rgba(15, 42, 74, 0.06), 0 6px 18px rgba(15, 42, 74, 0.08);
+}
+
+html[data-mantine-color-scheme='dark'] {
+  --ax-mist: #0b1b2e;
+  --ax-sheet: #12263d;
+  --ax-ink: #e6eef5;
+  --ax-accent: #6fa8d6;
+  --ax-rule: #2a4560;
+  --ax-stamp: #e0608f;
+  --ax-oxide: #e07a62;
+  --ax-muted: #8fa3b8;
+  --ax-selected: #1b3350;
+  --ax-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+
+/* Filled buttons in dark mode use the lifted Prussian, so the label is dark ink
+   (about 6.8:1). White on the lifted Prussian would be about 2.7:1. */
+html[data-mantine-color-scheme='dark'] .mantine-Button-root[data-variant='filled'] {
+  color: #0b1b2e;
+}
+
+/* Visible keyboard focus in the Prussian accent, lifted in dark mode. */
+:focus-visible {
+  outline: 2px solid light-dark(var(--mantine-color-prussian-6), var(--mantine-color-prussian-4));
+  outline-offset: 2px;
+}
+
+/* Motion is decorative here. Keep state changes, drop the movement. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+.ax-mono {
+  font-family: var(--mantine-font-family-monospace);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Top bar. The two sides share leftover space so the search pill stays centered. */
+.ax-topbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 100%;
+  padding-inline: var(--mantine-spacing-sm);
+}
+
+.ax-topbar-side {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.ax-topbar-search {
+  flex: 1 1 220px;
+  max-width: 360px;
+  min-width: 168px;
+}
+
+.ax-global-search {
+  width: 100%;
+}
+
+/* Pill on the mist bar. Specificity matches Mantine's variant rule; this file loads after it. */
+[data-mantine-color-scheme] .ax-global-search-field[data-variant='default'] {
+  --input-bd: var(--ax-rule);
+  --input-bg: var(--ax-sheet);
+  --input-placeholder-color: var(--ax-muted);
+  --input-section-color: var(--ax-muted);
+}
+
+[data-mantine-color-scheme] .ax-global-search-field[data-variant='default']:hover {
+  --input-bd: var(--ax-accent);
+}
+
+.ax-accent {
+  color: var(--ax-accent);
+}
+
+.ax-sheet {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--ax-sheet);
+  border: 1px solid var(--ax-rule);
+  border-radius: 4px;
+  box-shadow: var(--ax-shadow);
+  overflow: hidden;
+}
+
+.ax-sheet-bar {
+  flex: none;
+  padding: 8px 14px;
+  font-size: 11px;
+  color: var(--ax-accent);
+  letter-spacing: 0.04em;
+}
+
+.ax-open-file {
+  font-family: var(--mantine-font-family);
+  color: var(--ax-accent);
+  white-space: nowrap;
+}
+
+.ax-viewer-frame {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  border: 0;
+  background: var(--ax-mist);
+}
+
+.ax-viewer-image {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 12px 12px;
+  background: var(--ax-mist);
+}
+
+.ax-image {
+  display: block;
+  max-width: 100%;
+  margin: 0 auto;
+  cursor: zoom-in;
+  background: var(--ax-sheet);
+  box-shadow: 0 0 0 1px var(--ax-rule);
+}
+
+.ax-image.zoomed {
+  max-width: none;
+  width: 180%;
+  cursor: zoom-out;
+}
+
+/* Filing stamp: carmine, reserved for this and the unfiled count. */
+.ax-stamp {
+  position: absolute;
+  top: 44px;
+  right: 16px;
+  z-index: 3;
+  border: 2px solid var(--ax-stamp);
+  color: var(--ax-stamp);
+  border-radius: 3px;
+  padding: 4px 10px;
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  pointer-events: none;
+}
+
+/* Chips: suggestions and tag filters. */
+.ax-chips {
+  gap: 4px;
+}
+
+.ax-chip {
+  appearance: none;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.2;
+  color: var(--ax-ink);
+  background: var(--ax-mist);
+  border: 1px solid var(--ax-rule);
+  border-radius: 3px;
+  padding: 3px 7px;
+  cursor: pointer;
+  max-width: 100%;
+  text-align: left;
+}
+
+.ax-chip:hover:not(:disabled),
+.ax-chip.active {
+  border-color: var(--ax-accent);
+}
+
+.ax-chip.active {
+  background: var(--ax-selected);
+}
+
+.ax-chip:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.ax-ocr-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.ax-ocr-dot.pending {
+  background: var(--ax-accent);
+}
+
+.ax-ocr-dot.failed {
+  background: var(--ax-oxide);
+}
+
+/* Triage: queue | light table | filing card. */
+.ax-triage {
+  display: grid;
+  grid-template-columns: 124px minmax(0, 1fr) 260px;
+  gap: 12px;
+  height: calc(100vh - 56px);
+  padding: 12px;
+  box-sizing: border-box;
+  background: var(--ax-mist);
+}
+
+.ax-queue-col {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.ax-queue-head {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ax-accent);
+  margin: 0 0 6px;
+}
+
+.ax-queue-scroll {
+  flex: 1;
+  min-height: 0;
+}
+
+.ax-queue-item {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  text-align: left;
+  padding: 6px;
+  margin-bottom: 2px;
+  border: 1px solid transparent;
+  border-left: 3px solid transparent;
+  border-radius: 4px;
+  color: var(--ax-ink);
+}
+
+.ax-queue-item:hover {
+  background: color-mix(in srgb, var(--ax-sheet) 60%, transparent);
+}
+
+.ax-queue-item.selected {
+  background: var(--ax-sheet);
+  border-color: var(--ax-rule);
+  border-left-color: var(--ax-accent);
+}
+
+.ax-thumb {
+  height: 44px;
+  overflow: hidden;
+  background: var(--ax-mist);
+  border: 1px solid var(--ax-rule);
+  border-radius: 2px;
+  margin-bottom: 4px;
+}
+
+.ax-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top;
+}
+
+.ax-queue-no {
+  font-size: 11px;
+}
+
+.ax-queue-title {
+  font-size: 11px;
+  line-height: 1.3;
+  color: var(--ax-muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.ax-sheet-col {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.ax-sheet-col > .ax-sheet {
+  flex: 1;
+}
+
+.ax-card-col {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+}
+
+.ax-card {
+  height: 100%;
+  box-sizing: border-box;
+  padding: 12px;
+  background: var(--ax-sheet);
+  border: 1px solid var(--ax-rule);
+  border-radius: 4px;
+  overflow-y: auto;
+}
+
+.ax-card .mantine-InputWrapper-label {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ax-muted);
+  font-weight: 600;
+}
+
+.ax-card-no {
+  text-align: right;
+  font-size: 11px;
+}
+
+.ax-card-actions {
+  padding-top: 8px;
+}
+
+.ax-empty {
+  margin: 48px auto;
+  padding: 0 24px;
+}
+
+/* Mobile: queue becomes a strip, the filing card a bottom sheet. */
+.ax-triage-mobile {
+  display: flex;
+  flex-direction: column;
+  grid-template-columns: none;
+  gap: 0;
+  padding: 0;
+}
+
+.ax-queue-strip {
+  flex: none;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--ax-rule);
+  background: var(--ax-mist);
+}
+
+.ax-strip-item {
+  flex: none;
+  min-width: 58px;
+  height: 32px;
+  padding: 0 6px;
+  border: 1px solid var(--ax-rule);
+  border-radius: 3px;
+  background: var(--ax-mist);
+  color: var(--ax-ink);
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ax-strip-item.selected {
+  background: var(--ax-sheet);
+  border-color: var(--ax-accent);
+}
+
+.ax-triage-mobile .ax-sheet-col,
+.ax-triage-mobile > .ax-sheet {
+  margin: 12px;
+  flex: 1;
+  min-height: 220px;
+}
+
+.ax-triage-mobile > .ax-sheet {
+  margin: 12px 12px 0;
+}
+
+.ax-triage-mobile .ax-sheet-panel {
+  flex: none;
+  max-height: 48vh;
+  overflow-y: auto;
+  background: var(--ax-sheet);
+  border-top: 1px solid var(--ax-rule);
+  border-radius: 14px 14px 0 0;
+  padding: 14px;
+  box-sizing: border-box;
+}
+
+.ax-triage-mobile .ax-card {
+  height: auto;
+  border: 0;
+  padding: 0;
+  background: transparent;
+}
+
+/* Library. */
+.ax-library {
+  padding: 20px 24px;
+  min-height: calc(100vh - 56px);
+  box-sizing: border-box;
+}
+
+.ax-library-side {
+  width: 240px;
+  flex-shrink: 0;
+  padding-right: 20px;
+}
+
+.ax-library-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.ax-library-title {
+  margin: 0;
+}
+
+.ax-tree-row {
+  min-height: 30px;
+  border-radius: 4px;
+}
+
+.ax-tree-row.active {
+  background: var(--ax-selected);
+}
+
+.ax-tree-link {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 6px;
+  color: var(--ax-ink);
+  text-align: left;
+  border-radius: 4px;
+}
+
+.ax-tree-name {
+  flex: 1;
+  min-width: 0;
+}
+
+.ax-tree-all {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 5px 6px;
+  border-radius: 4px;
+  color: var(--ax-ink);
+  text-align: left;
+}
+
+.ax-tree-all.active {
+  background: var(--ax-selected);
+}
+
+.ax-type-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.ax-table-sheet {
+  background: var(--ax-sheet);
+  overflow: hidden;
+}
+
+.ax-doc-table th {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ax-muted);
+}
+
+.ax-doc-table tbody tr:focus-visible {
+  outline-offset: -2px;
+}
+
+.ax-snippet .ax-mark {
+  background: var(--ax-selected);
+  color: var(--ax-ink);
+  border-radius: 2px;
+  padding: 0 2px;
+}
+
+/* Document detail. */
+.ax-detail {
+  padding: 16px 24px 32px;
+  box-sizing: border-box;
+}
+
+.ax-detail-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(320px, 0.9fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.ax-detail-sheet {
+  height: calc(100vh - 150px);
+  min-height: 480px;
+}
+
+.ax-facts {
+  display: grid;
+  grid-template-columns: 130px minmax(0, 1fr);
+  gap: 6px 12px;
+  margin: 8px 0 0;
+  font-size: 13px;
+}
+
+.ax-facts dt {
+  color: var(--ax-muted);
+}
+
+.ax-facts dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.ax-hash {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ax-ocr-text {
+  background: var(--ax-sheet);
+  border: 1px solid var(--ax-rule);
+  border-radius: 4px;
+  padding: 12px;
+}
+
+.ax-ocr-text pre {
+  white-space: pre-wrap;
+  font-family: inherit;
+  line-height: 1.5;
+}
+
+@media (max-width: 1100px) {
+  .ax-triage {
+    grid-template-columns: 104px minmax(0, 1fr) 220px;
+  }
+
+  .ax-detail-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ax-detail-sheet {
+    height: 60vh;
+  }
+}
+
+@media (max-width: 767px) {
+  .ax-library {
+    flex-direction: column;
+    padding: 12px;
+  }
+
+  .ax-library-side {
+    width: 100%;
+    padding-right: 0;
+  }
+
+  .ax-detail {
+    padding: 12px;
+  }
+}

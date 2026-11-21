@@ -1,0 +1,57 @@
+name: Container
+
+# Publishes ghcr.io/<owner>/archivr (the user's packages, same as helpdesk):
+#   - untagged commit -> :latest
+#   - tagged commit   -> :<tag>
+# No per-commit SHA tags are pushed.
+on:
+  push:
+    branches: ["**"]
+    tags: ["*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: container-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute image reference
+        id: image
+        run: |
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            version="${GITHUB_REF_NAME}"
+          else
+            version="latest"
+          fi
+          echo "ref=ghcr.io/${owner}/archivr:${version}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.image.outputs.ref }}
+          # Disable attestations so the registry holds only the tagged image.
+          provenance: false
+          sbom: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

@@ -1,0 +1,21 @@
+# Local data and secrets
+.env
+data/
+local/
+
+# Go
+backend/archivr
+backend/cmd/archivr/dist/*
+!backend/cmd/archivr/dist/.gitkeep
+*.test
+*.out
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# OS and editor
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/settings.json

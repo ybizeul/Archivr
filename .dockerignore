@@ -1,0 +1,9 @@
+.git
+.env
+data/
+local/
+frontend/node_modules/
+frontend/dist/
+backend/archivr
+backend/cmd/archivr/dist/*
+!backend/cmd/archivr/dist/.gitkeep

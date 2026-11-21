@@ -1,0 +1,27 @@
+[tools]
+go = "1.26"
+node = "latest"
+
+[tasks.back]
+description = "Run Go backend"
+dir = "backend"
+run = "set -a && source ../.env && set +a && go run ./cmd/archivr"
+
+[tasks.test]
+description = "Run backend tests"
+dir = "backend"
+run = "go test ./..."
+
+[tasks.front]
+description = "Run Vite frontend dev server"
+dir = "frontend"
+run = "npm run dev"
+
+[tasks.dev]
+description = "Run frontend + backend"
+depends = ["front", "back"]
+
+[tasks.build-frontend]
+description = "Build frontend into the Go embed directory"
+dir = "frontend"
+run = "npm run build && find ../backend/cmd/archivr/dist -mindepth 1 ! -name .gitkeep -delete && cp -R dist/. ../backend/cmd/archivr/dist/"

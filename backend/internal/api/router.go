@@ -1,0 +1,236 @@
+// Package api exposes the Archivr HTTP API under /api/v1.
+package api
+
+import (
+	"log/slog"
+	"net"
+	"net/http"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/archivr/backend/internal/archive"
+	"github.com/archivr/backend/internal/auth"
+	"github.com/archivr/backend/internal/ingest"
+	"github.com/archivr/backend/internal/ocr"
+	"github.com/archivr/backend/internal/paperless"
+	"github.com/archivr/backend/internal/preview"
+	"github.com/archivr/backend/internal/store"
+)
+
+const (
+	sessionCookieName = "archivr_session"
+	oidcCallbackPath  = "/api/v1/auth/oidc/callback"
+)
+
+// Deps are the collaborators the handlers need. Now is injected so tests can control time.
+type Deps struct {
+	Store      *store.Store
+	Sessions   *auth.Sessions
+	OIDC       *auth.OIDCService
+	Limiter    *auth.LoginLimiter
+	PublicURL  string // external base URL, e.g. https://archive.example.org. Derived from the request when empty
+	TrustProxy bool   // trust X-Forwarded-For for the client IP. Enable only behind a proxy you control
+	Now        func() time.Time
+
+	Archive   *archive.Service
+	Ingest    *ingest.Importer
+	Paperless *paperless.Runner
+	OCR       *ocr.Pool
+	Engine    ocr.Engine
+	Previews  *preview.Cache
+	WatchDir  string
+	Web       http.Handler // the embedded single-page app; nil serves 404 outside /api
+	Log       *slog.Logger
+}
+
+type server struct {
+	Deps
+}
+
+// NewRouter returns the handler for /healthz, /api/v1/ and the web app.
+func NewRouter(d Deps) http.Handler {
+	if d.Now == nil {
+		d.Now = time.Now
+	}
+	if d.Log == nil {
+		d.Log = slog.Default()
+	}
+	s := &server{Deps: d}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	})
+
+	// Sign-in and session.
+	mux.HandleFunc("POST /api/v1/auth/login", s.login)
+	mux.HandleFunc("POST /api/v1/auth/logout", s.logout)
+	mux.HandleFunc("GET /api/v1/auth/me", s.authed(false, s.me))
+	mux.HandleFunc("GET /api/v1/auth/oidc/status", s.oidcStatus)
+	mux.HandleFunc("GET /api/v1/auth/oidc/start", s.oidcStart)
+	mux.HandleFunc("GET /api/v1/auth/oidc/callback", s.oidcCallback)
+
+	// Inbox and documents.
+	mux.HandleFunc("GET /api/v1/inbox/count", s.authed(false, s.inboxCount))
+	mux.HandleFunc("GET /api/v1/documents", s.authed(false, s.listDocuments))
+	mux.HandleFunc("POST /api/v1/documents", s.authed(false, s.uploadDocument))
+	mux.HandleFunc("GET /api/v1/documents/{id}", s.authed(false, s.getDocument))
+	mux.HandleFunc("PATCH /api/v1/documents/{id}", s.authed(false, s.patchDocument))
+	mux.HandleFunc("DELETE /api/v1/documents/{id}", s.authed(false, s.deleteDocument))
+	mux.HandleFunc("GET /api/v1/documents/{id}/file", s.authed(false, s.documentFile))
+	mux.HandleFunc("GET /api/v1/documents/{id}/thumbnail", s.authed(false, s.documentThumbnail))
+	mux.HandleFunc("GET /api/v1/documents/{id}/suggestions", s.authed(false, s.documentSuggestions))
+	mux.HandleFunc("POST /api/v1/documents/{id}/reocr", s.authed(false, s.reOCR))
+
+	// Folders, types, correspondents and tags.
+	mux.HandleFunc("GET /api/v1/folders", s.authed(false, s.listFolders))
+	mux.HandleFunc("POST /api/v1/folders", s.authed(false, s.createFolder))
+	mux.HandleFunc("PATCH /api/v1/folders/{id}", s.authed(false, s.patchFolder))
+	mux.HandleFunc("DELETE /api/v1/folders/{id}", s.authed(false, s.deleteFolder))
+	mux.HandleFunc("GET /api/v1/types", s.authed(false, s.listTypes))
+	mux.HandleFunc("POST /api/v1/types", s.authed(true, s.createType))
+	mux.HandleFunc("PATCH /api/v1/types/{id}", s.authed(true, s.patchType))
+	mux.HandleFunc("DELETE /api/v1/types/{id}", s.authed(true, s.deleteType))
+	mux.HandleFunc("GET /api/v1/correspondents", s.authed(false, s.listCorrespondents))
+	mux.HandleFunc("GET /api/v1/tags", s.authed(false, s.listTags))
+	mux.HandleFunc("PATCH /api/v1/tags/{id}", s.authed(false, s.patchTag))
+	mux.HandleFunc("DELETE /api/v1/tags/{id}", s.authed(false, s.deleteTag))
+
+	// Admin: sign-in, mail, OCR, Paperless import, users.
+	mux.HandleFunc("GET /api/v1/admin/settings/auth", s.authed(true, s.getAuthSettings))
+	mux.HandleFunc("PUT /api/v1/admin/settings/auth", s.authed(true, s.putAuthSettings))
+	mux.HandleFunc("GET /api/v1/admin/settings/imap", s.authed(true, s.getIMAPSettings))
+	mux.HandleFunc("PUT /api/v1/admin/settings/imap", s.authed(true, s.putIMAPSettings))
+	mux.HandleFunc("POST /api/v1/admin/settings/imap/test", s.authed(true, s.testIMAP))
+	mux.HandleFunc("GET /api/v1/admin/settings/imap/mailboxes", s.authed(true, s.listMailboxes))
+	mux.HandleFunc("GET /api/v1/admin/settings/ocr", s.authed(true, s.getOCRSettings))
+	mux.HandleFunc("PUT /api/v1/admin/settings/ocr", s.authed(true, s.putOCRSettings))
+	mux.HandleFunc("GET /api/v1/admin/settings/paperless", s.authed(true, s.getPaperlessSettings))
+	mux.HandleFunc("PUT /api/v1/admin/settings/paperless", s.authed(true, s.putPaperlessSettings))
+	mux.HandleFunc("POST /api/v1/admin/settings/paperless/test", s.authed(true, s.testPaperless))
+	mux.HandleFunc("GET /api/v1/admin/paperless/tags", s.authed(true, s.listPaperlessTags))
+	mux.HandleFunc("GET /api/v1/admin/paperless/mapping", s.authed(true, s.getPaperlessMapping))
+	mux.HandleFunc("PUT /api/v1/admin/paperless/mapping", s.authed(true, s.putPaperlessMapping))
+	mux.HandleFunc("GET /api/v1/admin/paperless/import", s.authed(true, s.getPaperlessImport))
+	mux.HandleFunc("POST /api/v1/admin/paperless/import", s.authed(true, s.startPaperlessImport))
+	mux.HandleFunc("POST /api/v1/admin/paperless/import/cancel", s.authed(true, s.cancelPaperlessImport))
+	mux.HandleFunc("GET /api/v1/admin/users", s.authed(true, s.listUsers))
+	mux.HandleFunc("POST /api/v1/admin/users", s.authed(true, s.createUser))
+	mux.HandleFunc("PATCH /api/v1/admin/users/{id}", s.authed(true, s.patchUser))
+	mux.HandleFunc("DELETE /api/v1/admin/users/{id}", s.authed(true, s.deleteUser))
+	mux.HandleFunc("POST /api/v1/admin/users/{id}/password", s.authed(true, s.setUserPassword))
+
+	// Unknown API paths get a JSON 404, not the web app.
+	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "no such endpoint")
+	})
+	if d.Web != nil {
+		mux.Handle("/", d.Web)
+	}
+	return mux
+}
+
+// authed wraps a handler that needs a signed-in user, and optionally an admin.
+func (s *server) authed(admin bool, next func(http.ResponseWriter, *http.Request, store.User)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		user, ok := s.currentUser(r)
+		if !ok {
+			writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "sign in required")
+			return
+		}
+		if admin && user.Role != "admin" {
+			writeError(w, http.StatusForbidden, "FORBIDDEN", "admin role required")
+			return
+		}
+		next(w, r, user)
+	}
+}
+
+// currentUser reads the session from the cookie, or from a Bearer token for API clients.
+// The user is reloaded from the database on every request, so a removed account or a
+// changed role takes effect at once.
+func (s *server) currentUser(r *http.Request) (store.User, bool) {
+	token := ""
+	if c, err := r.Cookie(sessionCookieName); err == nil {
+		token = c.Value
+	}
+	if h := r.Header.Get("Authorization"); strings.HasPrefix(h, "Bearer ") {
+		token = strings.TrimPrefix(h, "Bearer ")
+	}
+	if token == "" {
+		return store.User{}, false
+	}
+	claims, err := s.Sessions.Verify(token, s.Now())
+	if err != nil {
+		return store.User{}, false
+	}
+	id, err := strconv.ParseInt(claims.Subject, 10, 64)
+	if err != nil {
+		return store.User{}, false
+	}
+	user, err := s.Store.UserByID(r.Context(), id)
+	if err != nil {
+		return store.User{}, false
+	}
+	return user, true
+}
+
+// isHTTPS reports whether the client reached us over TLS, directly or via a proxy.
+func isHTTPS(r *http.Request) bool {
+	if r.TLS != nil {
+		return true
+	}
+	return strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
+}
+
+func (s *server) publicBase(r *http.Request) string {
+	if s.PublicURL != "" {
+		return strings.TrimRight(s.PublicURL, "/")
+	}
+	scheme := "http"
+	if isHTTPS(r) {
+		scheme = "https"
+	}
+	return scheme + "://" + r.Host
+}
+
+func (s *server) clientIP(r *http.Request) string {
+	if s.TrustProxy {
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			if i := strings.Index(xff, ","); i >= 0 {
+				return strings.TrimSpace(xff[:i])
+			}
+			return strings.TrimSpace(xff)
+		}
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
+}
+
+func setSessionCookie(w http.ResponseWriter, r *http.Request, token string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionCookieName,
+		Value:    token,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   isHTTPS(r),
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   int(auth.SessionTTL.Seconds()),
+	})
+}
+
+func clearSessionCookie(w http.ResponseWriter, r *http.Request) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionCookieName,
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   isHTTPS(r),
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   -1,
+	})
+}

@@ -1,0 +1,91 @@
+# Architecture
+
+Archivr is one Go process. It serves the API, the embedded web app, the OCR workers, and the two intake loops (watch folder and mail). State lives in one SQLite file and one directory tree.
+
+```
+          ┌───────────── intake ─────────────┐
+ scanner ─▶ watch folder ─┐                   │
+ email   ─▶ IMAP poller  ─┼─▶ ingest.Importer ─┼─▶ archive.Service ─▶ storage (files + sidecars)
+ browser ─▶ POST /documents┘   (sniff, dedupe) │        │                    │
+                                              │        ▼                    │
+                                              │   store (SQLite, FTS5) ◀────┘
+                                              │        ▲
+                                              │   ocr.Pool (workers) ──▶ tesseract / pdftoppm
+                                              └───────────────────────────────────────────────
+ browser ◀──── api (/api/v1) ◀──── session cookie ◀──── SPA (embedded)
+```
+
+## Packages
+
+| Package | Responsibility |
+| --- | --- |
+| `cmd/archivr` | Wiring, startup checks, graceful shutdown, the embedded web app. |
+| `internal/config` | Environment variables and their defaults. |
+| `internal/db` | SQLite open (WAL, foreign keys, one writer) and embedded migrations. |
+| `internal/store` | SQL only. Documents, folders, types, tags, users, settings, search. |
+| `internal/storage` | Paths, safe names, atomic writes, moves with sidecars. Nothing about the database. |
+| `internal/archive` | Business rules for mutations. Each one orders the file change and the database change. |
+| `internal/ingest` | MIME sniffing, the importer (dedupe), the watch folder, the IMAP poller. |
+| `internal/paperless` | Imports a Paperless-ngx library: the REST client, saved settings, and a background runner with progress. It files through `ingest.Importer`. |
+| `internal/ocr` | Engine detection, text extraction, the worker pool, requeue of pending work. |
+| `internal/preview` | Thumbnails, cached by content hash. |
+| `internal/suggest` | Dates and titles proposed from OCR text. Suggestions only; the user decides. |
+| `internal/auth` | Local passwords (argon2id), session tokens, OIDC flow, login rate limiting. |
+| `internal/api` | HTTP handlers, the route table, and the error format. |
+
+## Mutation rules
+
+Every change to a document follows the same order, so the file and the row never disagree for long:
+
+1. Do the file operation first (write, move, or remove), into a temp name and then renamed into place.
+2. Open a database transaction and make the row changes.
+3. If the transaction fails, undo the file operation.
+4. After commit, write the sidecar and queue any OCR work. A sidecar failure is logged, not fatal, because the database is the source of truth and sidecars are for recovery.
+
+Moves carry the sidecar with them. A failed database step after a move puts the file back, and a test covers this.
+
+Deleting a document moves its file into `trash/` inside the transaction, so a database failure restores it. After the commit the trashed file and its sidecar are removed. **Deletion is permanent.** The trash is a holding area for rollback, not a recovery bin.
+
+## Intake and deduplication
+
+- **Sniffing.** The file's bytes decide its type (PDF, PNG, JPEG, TIFF, WebP). The file name and the mail header do not. HEIC is recognised and rejected with a reason.
+- **Identity.** Every document has a SHA-256. A second copy of the same bytes is reported as a duplicate and is not stored again, whatever its name or source.
+- **Source references.** Each import also records a source reference: `name|size` for uploads and watch-folder files, and the Message-ID for mail. The pair of reference and hash is recorded in `ingest_log`. Seeing the same pair again returns the document it matched, so retries are safe.
+- **Watch folder.** A file is imported only when its size and modification time are unchanged across scans and at least two seconds old, so a partly copied file is never read. Imported files move to `.imported/`, rejects to `.rejected/`, and a name clash gets " (n)".
+- **Mail.** Unread messages (`UNSEEN`) are searched in the configured mailbox. Attachments with a real file name are imported. The message is marked read once its attachments are handled. Connections retry on transient errors with backoff.
+
+- **Paperless.** An admin starts a run from the web app. It lists documents page by page, downloads each original, and hands it to the importer with its title, date, type and tags, and the folder chosen by the saved tag-to-folder rules (first matching rule, otherwise the run's default folder). A document that is already in the archive, from an earlier run or as the same bytes, is moved to the folder of its first matching rule through `archive.Service.Update`, so the file, sidecar and row move together. With no matching rule it stays where it is. The source reference is `host#id`, so a repeat run skips documents it filed before without downloading them. One run at a time, kept in memory, stopped on shutdown. A run stops at once when Paperless rejects the token, and after ten failures in a row.
+
+## OCR
+
+`ocr.Engine` finds `tesseract`, `pdftotext` and `pdftoppm` on the path at startup. The result is shown in **Admin → Text recognition**.
+
+- A PDF with a text layer is read with `pdftotext`. Less than 20 characters counts as no text layer.
+- Otherwise the first 40 pages are rendered at 300 dpi and read page by page, with the configured languages.
+- If Tesseract is not installed, documents are marked `skipped`. Installing it later and pressing **Run OCR again** fixes them.
+- Work is queued on import and re-queued by a scanner every 30 seconds, so a restart never loses pending documents.
+- Each job has a time limit, set in the admin screen. Shutdown cancels running jobs, and they stay `pending` for the next start.
+
+## Search
+
+`documents_fts` (FTS5) indexes title, OCR text, tags, type name, with accent folding (`remove_diacritics 2`). Queries are split into words and matched as prefixes, ANDed together. Syntax characters in user input are quoted, so a stray `"` or `*` cannot break the query. Results rank by `bm25`, and snippets come from `snippet()` with control characters as highlight markers, which the client renders as text, never HTML.
+
+## Web app
+
+A React single-page app. The triage screen is the default. The library, document detail and admin screens are the other views. The app talks only to `/api/v1` with the HttpOnly session cookie, so no token is stored in the browser.
+
+The folder picker on the triage card has a **New folder** button beside it: type a name, choose where it goes (top level or inside any folder), and the new folder is selected for the document. The same control sits beside the folder pickers on the Paperless import screen.
+
+Keyboard shortcuts on triage: `J` and `K` move through the queue, `F` files the open document, `T` focuses the title, `S` focuses the folder. `Ctrl/⌘ K` opens search from any screen.
+
+Visual tokens (Cyanotype) are in `frontend/src/app.css` and `frontend/src/theme.ts`.
+
+## Security notes
+
+- Passwords: argon2id. Sign-in failures return one generic message. Repeated failures are rate-limited per email and client address together, so one address cannot lock out an account for everyone else.
+- SSO roles are re-synced on each sign-in from the groups claim (see the README). The admin group must be set before SSO sign-ins.
+- Sessions: HS256 JWT in an HttpOnly cookie, `SameSite=Lax`, `Secure` when served over HTTPS. The user is re-read from the database on each request, so a removed account or a demotion takes effect at once.
+- The API has no CSRF token. Mutations need the cookie and JSON bodies, and the cookie is `SameSite=Lax`, which blocks cross-site form posts.
+- Files are served with `nosniff` and `Content-Disposition: inline` on their stored type. Names are validated for path traversal and reserved characters.
+- Secrets (OIDC client secret, mail password) are never returned by the API. They appear masked as `********`, and a masked value sent back means "keep the stored one".
+- Admin-only routes: types, settings, users. The last admin cannot be removed, and nobody can delete their own account.
