@@ -92,6 +92,27 @@ func TestEngineWithoutTesseractReportsMissing(t *testing.T) {
 	}
 }
 
+func TestDPIForPageSizesCapsLargePages(t *testing.T) {
+	cases := []struct {
+		name string
+		info string
+		want int
+	}{
+		{"A4 keeps 300 dpi", "Page    1 size:  595 x 842 pts (A4)\n", 300},
+		{"a small page is not upscaled", "Page    1 size:  288 x 432 pts\n", 300},
+		{"poster-size scan is lowered", "Page    1 size:  3024 x 4032 pts\nPage    2 size:  3024 x 4032 pts\n", 62},
+		{"largest page of the document counts", "Page    1 size:  595 x 842 pts (A4)\nPage    2 size:  3024 x 4032 pts\n", 62},
+		{"unreadable output falls back to 300", "File size: 10 bytes\n", 300},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := dpiForPageSizes(c.info); got != c.want {
+				t.Fatalf("dpi = %d, want %d", got, c.want)
+			}
+		})
+	}
+}
+
 func TestDetectReportsMissingTools(t *testing.T) {
 	st := Detect(context.Background(), Engine{})
 	if st.Tesseract || st.Poppler {
