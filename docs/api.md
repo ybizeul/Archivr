@@ -43,7 +43,7 @@ Unknown paths under `/api/` return a JSON `404 NOT_FOUND`.
 | Method and path | Body or query | Result |
 | --- | --- | --- |
 | `POST /auth/login` | `{ "email", "password" }` | `200` with `{ "user", "token" }` and sets the cookie. Failures: `401 INVALID_CREDENTIALS`, `403 LOCAL_LOGIN_DISABLED` when SSO is required, `429 RATE_LIMITED` after eight failures for one email and client address within 15 minutes. |
-| `POST /auth/logout` | | `204`. Clears the cookie. |
+| `POST /auth/logout` | | Clears the cookie. `204`, or `200` with `{ "redirect" }` when SSO is on and the provider has an end-session endpoint. The browser then goes to that URL, which ends the provider session and returns to `/login?signed_out=1`. |
 | `GET /auth/me` | | The signed-in user: `id`, `email`, `name`, `role`, `has_password`, `created_at`. |
 | `GET /auth/oidc/status` | | `{ "enabled", "disable_local_login" }`. |
 | `GET /auth/oidc/start` | | Redirects to the identity provider. `400 OIDC_DISABLED` if SSO is off. |

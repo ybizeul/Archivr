@@ -18,6 +18,13 @@ export function AppLayout() {
   const dateLocalePref = useDateLocalePref()
   const isMobile = useMediaQuery('(max-width: 767px)', undefined, { getInitialValueInEffect: false }) ?? false
 
+  // With SSO, end the provider session too. Otherwise just go to the login page.
+  const signOut = async () => {
+    const providerLogout = await logout()
+    if (providerLogout) window.location.assign(providerLogout)
+    else navigate('/login')
+  }
+
   const nav = [
     { to: '/inbox', label: 'Inbox', icon: <IconInbox size={22} stroke={1.6} />, active: pathname === '/inbox', count: inbox.data?.count },
     { to: '/library', label: 'Library', icon: <IconFolders size={22} stroke={1.6} />, active: pathname.startsWith('/library') || pathname.startsWith('/documents') },
@@ -94,7 +101,7 @@ export function AppLayout() {
               {user?.name || user?.email}
             </Text>
             <Tooltip label="Sign out">
-              <ActionIcon variant="subtle" color="gray" aria-label="Sign out" onClick={() => void logout().then(() => navigate('/login'))}>
+              <ActionIcon variant="subtle" color="gray" aria-label="Sign out" onClick={() => void signOut()}>
                 <IconLogout size={18} stroke={1.6} />
               </ActionIcon>
             </Tooltip>

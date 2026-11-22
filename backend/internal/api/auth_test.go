@@ -8,7 +8,9 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -229,6 +231,86 @@ func TestLogoutClearsCookie(t *testing.T) {
 	}
 	cleared := sessionCookie(rec)
 	if cleared == nil || cleared.MaxAge >= 0 || cleared.Value != "" {
+		t.Fatalf("cookie not cleared: %+v", cleared)
+	}
+}
+
+// fakeIdentityProvider serves OIDC discovery. endSession is the path of its logout endpoint, or "" for none.
+func fakeIdentityProvider(t *testing.T, endSession string) *httptest.Server {
+	t.Helper()
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/.well-known/openid-configuration" {
+			http.NotFound(w, r)
+			return
+		}
+		doc := map[string]any{
+			"issuer":                 srv.URL,
+			"authorization_endpoint": srv.URL + "/authorize",
+			"token_endpoint":         srv.URL + "/token",
+			"jwks_uri":               srv.URL + "/keys",
+		}
+		if endSession != "" {
+			doc["end_session_endpoint"] = srv.URL + endSession
+		}
+		_ = json.NewEncoder(w).Encode(doc)
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func TestLogoutReturnsProviderEndSessionURL(t *testing.T) {
+	idp := fakeIdentityProvider(t, "/logout")
+	f := newFixture(t)
+	admin := sessionCookie(f.login(adminEmail, password))
+	f.do(http.MethodPut, "/api/v1/admin/settings/auth", map[string]any{
+		"oidc_enabled":   true,
+		"oidc_issuer":    idp.URL,
+		"oidc_client_id": "archivr",
+	}, admin)
+
+	c := sessionCookie(f.login(readerEmail, password))
+	rec := f.do(http.MethodPost, "/api/v1/auth/logout", nil, c)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Redirect string `json:"redirect"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("bad body %s: %v", rec.Body.String(), err)
+	}
+	u, err := url.Parse(body.Redirect)
+	if err != nil || u.Scheme+"://"+u.Host+u.Path != idp.URL+"/logout" {
+		t.Fatalf("redirect = %q, want provider logout endpoint", body.Redirect)
+	}
+	if u.Query().Get("client_id") != "archivr" {
+		t.Fatalf("client_id missing from %q", body.Redirect)
+	}
+	if !strings.HasSuffix(u.Query().Get("post_logout_redirect_uri"), "/login?signed_out=1") {
+		t.Fatalf("post_logout_redirect_uri = %q", u.Query().Get("post_logout_redirect_uri"))
+	}
+	if cleared := sessionCookie(rec); cleared == nil || cleared.MaxAge >= 0 {
+		t.Fatalf("cookie not cleared: %+v", cleared)
+	}
+}
+
+func TestLogoutWithoutProviderEndSessionStillClearsCookie(t *testing.T) {
+	idp := fakeIdentityProvider(t, "")
+	f := newFixture(t)
+	admin := sessionCookie(f.login(adminEmail, password))
+	f.do(http.MethodPut, "/api/v1/admin/settings/auth", map[string]any{
+		"oidc_enabled":   true,
+		"oidc_issuer":    idp.URL,
+		"oidc_client_id": "archivr",
+	}, admin)
+
+	c := sessionCookie(f.login(readerEmail, password))
+	rec := f.do(http.MethodPost, "/api/v1/auth/logout", nil, c)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if cleared := sessionCookie(rec); cleared == nil || cleared.MaxAge >= 0 {
 		t.Fatalf("cookie not cleared: %+v", cleared)
 	}
 }

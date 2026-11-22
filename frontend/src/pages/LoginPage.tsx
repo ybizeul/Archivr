@@ -40,7 +40,9 @@ export function LoginPage() {
   const localDisabled = oidc.data?.disable_local_login === true
   // With local sign-in off, SSO is the only way in, so skip the login page. If the provider just sent us
   // back with an error, stay here and show it. Redirecting again would loop.
-  const autoSSO = !user && oidc.data?.enabled === true && localDisabled && !oidcCode
+  // After a sign-out the provider sends the browser back with signed_out, so SSO is not started again.
+  const signedOut = new URLSearchParams(location.search).has('signed_out')
+  const autoSSO = !user && oidc.data?.enabled === true && localDisabled && !oidcCode && !signedOut
 
   useEffect(() => {
     if (autoSSO) window.location.assign(`/api/v1/auth/oidc/start?redirect=${encodeURIComponent(from)}`)

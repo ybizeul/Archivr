@@ -21,6 +21,9 @@ import (
 const (
 	sessionCookieName = "archivr_session"
 	oidcCallbackPath  = "/api/v1/auth/oidc/callback"
+	// signedOutPath is where the provider sends the browser after a logout. The login page
+	// reads the flag and does not start SSO again.
+	signedOutPath = "/login?signed_out=1"
 )
 
 // Deps are the collaborators the handlers need. Now is injected so tests can control time.

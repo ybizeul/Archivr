@@ -144,6 +144,36 @@ func (s *OIDCService) Complete(ctx context.Context, cfg Settings, redirectURI, s
 	}, entry.redirectTo, nil
 }
 
+// EndSessionURL returns the provider's RP-initiated logout URL, which ends the session at the provider
+// and then sends the browser to postLogoutURI. It returns "" when the provider does not offer one.
+func (s *OIDCService) EndSessionURL(ctx context.Context, cfg Settings, postLogoutURI string) (string, error) {
+	if !cfg.OIDCReady() {
+		return "", ErrOIDCNotConfigured
+	}
+	provider, err := discover(ctx, cfg.OIDCIssuer)
+	if err != nil {
+		return "", err
+	}
+	var meta struct {
+		EndSessionEndpoint string `json:"end_session_endpoint"`
+	}
+	if err := provider.Claims(&meta); err != nil {
+		return "", fmt.Errorf("read provider metadata: %w", err)
+	}
+	if meta.EndSessionEndpoint == "" {
+		return "", nil
+	}
+	u, err := url.Parse(meta.EndSessionEndpoint)
+	if err != nil {
+		return "", fmt.Errorf("invalid end_session_endpoint: %w", err)
+	}
+	q := u.Query()
+	q.Set("client_id", cfg.OIDCClientID)
+	q.Set("post_logout_redirect_uri", postLogoutURI)
+	u.RawQuery = q.Encode()
+	return u.String(), nil
+}
+
 func discover(ctx context.Context, issuer string) (*coreoidc.Provider, error) {
 	ctx, cancel := context.WithTimeout(ctx, oidcDiscoveryTTL)
 	defer cancel()

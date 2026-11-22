@@ -93,8 +93,18 @@ func (s *server) issueSession(w http.ResponseWriter, r *http.Request, user store
 	return token, nil
 }
 
+// logout clears the session cookie. With SSO on, it also returns the provider's logout URL so the
+// browser can end the provider session too. If the provider has none, or cannot be reached,
+// the local sign-out still happens.
 func (s *server) logout(w http.ResponseWriter, r *http.Request) {
 	clearSessionCookie(w, r)
+	if settings, err := auth.LoadSettings(r.Context(), s.Store); err == nil && settings.OIDCReady() {
+		target, err := s.OIDC.EndSessionURL(r.Context(), settings, s.publicBase(r)+signedOutPath)
+		if err == nil && target != "" {
+			writeJSON(w, http.StatusOK, map[string]string{"redirect": target})
+			return
+		}
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 

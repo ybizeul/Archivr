@@ -30,7 +30,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   })
 
   const logoutMutation = useMutation({
-    mutationFn: () => api.post<void>('/auth/logout'),
+    mutationFn: () => api.post<{ redirect?: string } | undefined>('/auth/logout'),
     onSettled: () => {
       queryClient.setQueryData(ME_KEY, null)
     },
@@ -43,7 +43,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await loginMutation.mutateAsync({ email, password })
     },
     logout: async () => {
-      await logoutMutation.mutateAsync()
+      const res = await logoutMutation.mutateAsync()
+      return res?.redirect ?? null
     },
   }
 
