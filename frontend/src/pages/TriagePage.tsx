@@ -54,7 +54,8 @@ export function TriagePage() {
   const allItems = queue.items
   const tagCounts = new Map<string, number>()
   for (const d of allItems) for (const t of d.tags) tagCounts.set(t, (tagCounts.get(t) ?? 0) + 1)
-  const tagOptions = [...tagCounts.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+  // Most-used tags first; ties fall back to name.
+  const tagOptions = [...tagCounts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
   // A tag drops out of the filter once no inbox document carries it any more.
   const activeTags = selectedTags.filter((t) => tagCounts.has(t))
   const filtering = activeTags.length > 0
