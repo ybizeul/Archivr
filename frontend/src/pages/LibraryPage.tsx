@@ -8,7 +8,6 @@ import type { Document } from '../api/types'
 import { DateField } from '../components/DateField'
 import { FolderTree } from '../components/FolderTree'
 import { Snippet } from '../components/Snippet'
-import { UploadButton } from '../components/UploadButton'
 import { accession, formatDate, folderLabel, folderTitle, isTrash, OCR_LABEL } from '../lib/format'
 
 const PAGE_SIZE = 50
@@ -174,9 +173,6 @@ export function LibraryPage() {
                 { value: 'grid', label: <ViewLabel icon={<IconLayoutGrid size={16} stroke={1.6} />} text="Cards" /> },
               ]}
             />
-            <Box visibleFrom="sm">
-              <UploadButton variant="filled" />
-            </Box>
           </Group>
         </Group>
 
