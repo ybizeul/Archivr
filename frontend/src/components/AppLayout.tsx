@@ -19,7 +19,7 @@ export function AppLayout() {
   const isMobile = useMediaQuery('(max-width: 767px)', undefined, { getInitialValueInEffect: false }) ?? false
 
   const nav = [
-    { to: '/', label: 'Inbox', icon: <IconInbox size={22} stroke={1.6} />, active: pathname === '/', count: inbox.data?.count },
+    { to: '/inbox', label: 'Inbox', icon: <IconInbox size={22} stroke={1.6} />, active: pathname === '/inbox', count: inbox.data?.count },
     { to: '/library', label: 'Library', icon: <IconFolders size={22} stroke={1.6} />, active: pathname.startsWith('/library') || pathname.startsWith('/documents') },
     ...(user?.role === 'admin' ? [{ to: '/admin', label: 'Admin', icon: <IconSettings size={22} stroke={1.6} />, active: pathname.startsWith('/admin') }] : []),
   ]
@@ -29,7 +29,7 @@ export function AppLayout() {
       <AppShell.Header>
         <Box className="ax-topbar">
           <Group gap="lg" wrap="nowrap" className="ax-topbar-side">
-            <Text component={Link} to="/" fw={700} size="lg" c="prussian.6" className="ax-brand">
+            <Text component={Link} to="/library" fw={700} size="lg" c="prussian.6" className="ax-brand">
               Archivr
             </Text>
             <Group gap={4} wrap="nowrap" component="nav" aria-label="Main" visibleFrom="sm">
@@ -184,7 +184,7 @@ function ArchiveSpotlight() {
   }
 
   const views: SpotlightActionData[] = [
-    { id: 'go-inbox', label: 'Inbox', description: 'Triage new documents', group: 'Go to', onClick: go('/') },
+    { id: 'go-inbox', label: 'Inbox', description: 'Triage new documents', group: 'Go to', onClick: go('/inbox') },
     { id: 'go-library', label: 'Library', description: 'Browse folders', group: 'Go to', onClick: go('/library') },
     ...(user?.role === 'admin'
       ? [{ id: 'go-admin', label: 'Admin', description: 'Sign-in, mail, OCR, users', group: 'Go to', onClick: go('/admin') }]

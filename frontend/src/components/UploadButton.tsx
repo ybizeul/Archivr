@@ -26,7 +26,7 @@ export function UploadButton({ variant = 'default', size = 'sm', compact = false
           title: 'Added to the inbox',
           message: `No. ${doc.id} · ${doc.title}`,
         })
-        void navigate(`/?doc=${doc.id}`)
+        void navigate(`/inbox?doc=${doc.id}`)
       },
       onError: (err) => {
         const code = (err as Error & { code?: string }).code

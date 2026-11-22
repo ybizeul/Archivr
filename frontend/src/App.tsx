@@ -40,7 +40,8 @@ export default function App() {
           </RequireAuth>
         }
       >
-        <Route index element={<TriagePage />} />
+        <Route index element={<Navigate to="/library" replace />} />
+        <Route path="inbox" element={<TriagePage />} />
         <Route path="library" element={<LibraryPage />} />
         <Route path="documents/:id" element={<DocumentPage />} />
         <Route path="admin" element={<AdminPage />} />

@@ -25,7 +25,7 @@ export function AdminPage() {
   const [params, setParams] = useSearchParams()
 
   if (user?.role !== 'admin') {
-    return <Navigate to="/" replace />
+    return <Navigate to="/library" replace />
   }
 
   const requested = params.get('tab') as TabKey | null
