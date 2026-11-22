@@ -477,6 +477,8 @@ function DocumentGrid({
           <UnstyledButton className="ax-doc-tile" onClick={() => onOpen(d.id)} aria-label={`No. ${d.id}, ${d.title}`}>
             <div className="ax-doc-tile-thumb">
               <img
+                // A new element for a new file: a failed load hides the old one for good.
+                key={d.sha256}
                 data-turn={d.rotation || undefined}
                 src={`/api/v1/documents/${d.id}/thumbnail?v=${d.sha256.slice(0, 12)}`}
                 alt=""

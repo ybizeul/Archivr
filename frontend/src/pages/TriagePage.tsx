@@ -698,6 +698,8 @@ function QueueButton({ doc, selected, onSelect }: { doc: Document; selected: boo
     >
       <div className="ax-thumb">
         <img
+          // A new element for a new file: a failed load hides the old one for good.
+          key={doc.sha256}
           src={`/api/v1/documents/${doc.id}/thumbnail?v=${doc.sha256.slice(0, 12)}`}
           alt=""
           loading="lazy"

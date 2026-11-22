@@ -554,6 +554,66 @@ func TestThumbnailForImage(t *testing.T) {
 	}
 }
 
+func TestReplacedFileGetsANewThumbnail(t *testing.T) {
+	f := newFixture(t)
+	c := readerCookie(t, f)
+
+	solid := func(col color.Color) []byte {
+		img := image.NewRGBA(image.Rect(0, 0, 200, 100))
+		for x := 0; x < 200; x++ {
+			for y := 0; y < 100; y++ {
+				img.Set(x, y, col)
+			}
+		}
+		var buf bytes.Buffer
+		if err := png.Encode(&buf, img); err != nil {
+			t.Fatal(err)
+		}
+		return buf.Bytes()
+	}
+	var doc struct {
+		ID     int64  `json:"id"`
+		SHA256 string `json:"sha256"`
+	}
+	decodeInto(t, f.upload(c, "a.png", solid(color.Black), "Photo"), &doc)
+	thumb := func() []byte {
+		th := f.do(http.MethodGet, fmt.Sprintf("/api/v1/documents/%d/thumbnail", doc.ID), nil, c)
+		if th.Code != http.StatusOK {
+			t.Fatalf("thumbnail: %d", th.Code)
+		}
+		return th.Body.Bytes()
+	}
+	before := thumb()
+
+	var body bytes.Buffer
+	mw := multipart.NewWriter(&body)
+	fw, _ := mw.CreateFormFile("file", "b.png")
+	fw.Write(solid(color.White))
+	mw.Close()
+	req := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/api/v1/documents/%d/file", doc.ID), &body)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	req.AddCookie(c)
+	rec := httptest.NewRecorder()
+	f.h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("replace: %d %s", rec.Code, rec.Body.String())
+	}
+
+	var list struct {
+		Items []struct {
+			ID     int64  `json:"id"`
+			SHA256 string `json:"sha256"`
+		} `json:"items"`
+	}
+	decodeInto(t, f.do(http.MethodGet, "/api/v1/documents", nil, c), &list)
+	if len(list.Items) != 1 || list.Items[0].ID != doc.ID || list.Items[0].SHA256 == doc.SHA256 {
+		t.Fatalf("list after replace = %+v, old sha %s", list.Items, doc.SHA256)
+	}
+	if bytes.Equal(before, thumb()) {
+		t.Fatal("thumbnail is still the one of the replaced file")
+	}
+}
+
 // Moving a document into Trash takes it out of the library and out of search.
 // Opening the Trash folder lists it again.
 func TestTrashStaysOutOfTheLibraryUntilOpened(t *testing.T) {
