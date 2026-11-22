@@ -44,7 +44,7 @@ A file move and a database commit cannot be made atomic together, so every chang
 
 Moves carry the sidecar with them. A database failure before the move leaves the file untouched, and a test covers this.
 
-Deleting a document deletes its rows, then moves its file into `trash/`, then commits. After the commit the trashed file and its sidecar are removed. **That removal is permanent.** `DATA_DIR/trash/` is a holding area for rollback, not a recovery bin. The Trash folder in the library is the recovery bin: the Delete button and the expiry sweep file documents there, and only a document already in that folder is removed this way.
+Deleting a document deletes its rows, then moves its file into `trash/`, then commits. After the commit the trashed file and its sidecar are removed. **That removal is permanent.** `DATA_DIR/trash/` is a holding area for rollback, not a recovery bin. The Trash folder in the library is the recovery bin: the Delete button and the expiry sweep file documents there, and only a document already in that folder is removed this way. Empty Trash does that for every document in the folder.
 
 ### Interrupted moves and the startup reconciler
 
@@ -108,4 +108,4 @@ Visual tokens (Cyanotype) are in `frontend/src/app.css` and `frontend/src/theme.
 - Headers: every response has `X-Content-Type-Options: nosniff` and `Referrer-Policy: same-origin`, and `Strict-Transport-Security` when served over HTTPS. Web app pages also have a content security policy that allows only same-origin scripts, workers and connections, and `frame-ancestors 'none'`. Styles allow `'unsafe-inline'` because Mantine injects style elements.
 - Files are served with `nosniff` and `Content-Disposition: inline` on their stored type. Names are validated for path traversal and reserved characters.
 - Secrets (OIDC client secret, mail password) are never returned by the API. They appear masked as `********`, and a masked value sent back means "keep the stored one".
-- Admin-only routes: types, settings, users. The last admin cannot be removed, and nobody can delete their own account.
+- Admin-only routes: types, settings, users, and Empty Trash. The last admin cannot be removed, and nobody can delete their own account.

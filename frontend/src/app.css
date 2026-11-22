@@ -573,6 +573,7 @@ html[data-mantine-color-scheme='dark'] .mantine-Button-root[data-variant='filled
 
 .ax-library-title {
   margin: 0;
+  min-width: 0;
 }
 
 .ax-tree-row {

@@ -5,7 +5,9 @@ import { IconAdjustmentsHorizontal, IconChevronDown, IconChevronUp, IconFolder, 
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useDocuments, useFolders, useTags, useTypes } from '../api/queries'
 import type { Document } from '../api/types'
+import { useAuth } from '../auth/context'
 import { DateField } from '../components/DateField'
+import { EmptyTrashDialog } from '../components/EmptyTrashDialog'
 import { FolderTree } from '../components/FolderTree'
 import { Snippet } from '../components/Snippet'
 import { accession, formatDate, folderLabel, folderTitle, isTrash, OCR_LABEL } from '../lib/format'
@@ -41,9 +43,11 @@ const OCR_FILTERS = [
 export function LibraryPage() {
   const [params, setParams] = useSearchParams()
   const navigate = useNavigate()
+  const { user } = useAuth()
   const isMobile = useMediaQuery('(max-width: 767px)', undefined, { getInitialValueInEffect: false }) ?? false
   const [browseOpen, setBrowseOpen] = useState(false)
   const [filtersOpen, setFiltersOpen] = useState(false)
+  const [emptyTrashOpen, setEmptyTrashOpen] = useState(false)
   // The chosen layout is a personal preference, so it is remembered in this browser rather than the URL.
   const [view, setView] = useLocalStorage<LibraryView>({ key: 'archivr-library-view', defaultValue: 'list' })
 
@@ -102,6 +106,9 @@ export function LibraryPage() {
   const tags = useTags()
 
   const currentFolder = folders.data?.find((f) => f.id === folder)
+  // Emptying Trash is permanent, so only admins are offered it.
+  const canEmptyTrash = user?.role === 'admin' && currentFolder !== undefined && isTrash(currentFolder)
+  const trashCount = canEmptyTrash ? currentFolder.document_count : 0
   const title = q ? `Results for “${q}”` : currentFolder ? (folderTitle(currentFolder)) : 'All documents'
   const activeFilters = [type, from, to, ocr, sort].filter(Boolean).length
   const pages = Math.max(1, Math.ceil((docs.data?.total ?? 0) / PAGE_SIZE))
@@ -162,7 +169,12 @@ export function LibraryPage() {
           <Title order={2} className="ax-library-title">
             {title}
           </Title>
-          <Group gap="sm" wrap="nowrap">
+          <Group gap="sm" wrap="nowrap" style={{ flexShrink: 0 }}>
+            {trashCount > 0 && (
+              <Button variant="subtle" color="oxide" size="xs" onClick={() => setEmptyTrashOpen(true)}>
+                Empty Trash
+              </Button>
+            )}
             <SegmentedControl
               size="xs"
               value={view}
@@ -290,6 +302,8 @@ export function LibraryPage() {
             )}
           </Paper>
         )}
+
+        <EmptyTrashDialog opened={emptyTrashOpen && canEmptyTrash} count={trashCount} onClose={() => setEmptyTrashOpen(false)} />
 
         <Group justify="space-between" mt="md" gap="xs">
           <Text size="sm" c="dimmed" className="ax-mono">

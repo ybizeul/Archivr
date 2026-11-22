@@ -507,6 +507,24 @@ func (s *Store) RecordIngest(ctx context.Context, source, ref, sha string, docID
 	return nil
 }
 
+// DocumentIDsInFolder lists the documents filed directly in a folder, lowest id first.
+func (s *Store) DocumentIDsInFolder(ctx context.Context, folderID int64) ([]int64, error) {
+	rows, err := s.q.QueryContext(ctx, `SELECT id FROM documents WHERE folder_id = ? ORDER BY id`, folderID)
+	if err != nil {
+		return nil, fmt.Errorf("list documents in folder: %w", err)
+	}
+	defer rows.Close()
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
 // CountInFolder returns how many documents are filed directly in a folder.
 func (s *Store) CountInFolder(ctx context.Context, folderID int64) (int, error) {
 	var n int

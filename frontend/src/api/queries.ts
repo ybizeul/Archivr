@@ -226,6 +226,15 @@ export function useDeleteDocument() {
   })
 }
 
+/** Permanently deletes every document in Trash. A failed attempt still refreshes the library. */
+export function useEmptyTrash() {
+  const invalidate = useInvalidateDocuments()
+  return useMutation({
+    mutationFn: () => api.post<{ deleted: number }>('/trash/empty'),
+    onSettled: () => invalidate(),
+  })
+}
+
 /** Signs a link to one document, valid for `expiresInSeconds`. Nothing changes on the document. */
 export function useCreateShare() {
   return useMutation({

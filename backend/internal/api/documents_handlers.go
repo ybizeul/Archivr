@@ -138,6 +138,16 @@ func (s *server) deleteDocument(w http.ResponseWriter, r *http.Request, _ store.
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// emptyTrash permanently deletes every document in the Trash folder.
+func (s *server) emptyTrash(w http.ResponseWriter, r *http.Request, _ store.User) {
+	n, err := s.Archive.EmptyTrash(r.Context())
+	if err != nil {
+		s.writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"deleted": n})
+}
+
 // uploadDocument files one uploaded file into INBOX. Multipart fields: file, an optional title, and an
 // optional valid_until (YYYY-MM-DD): the document moves to Trash once that day has passed.
 func (s *server) uploadDocument(w http.ResponseWriter, r *http.Request, _ store.User) {

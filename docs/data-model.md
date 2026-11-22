@@ -135,7 +135,7 @@ On start and then every hour, `archive.Service.ExpireDocuments` moves each docum
 
 ### Delete
 
-`DELETE /documents/{id}` moves the file and its sidecar into `DATA_DIR/trash/` inside the transaction, then removes the row. If the transaction fails, the files move back. After the commit the trashed copy is removed. **This removal is permanent.** The app uses it for a document that is already in the Trash folder. The Delete button, and expiry, file a document into that folder instead. That is a folder move, not this.
+`DELETE /documents/{id}` moves the file and its sidecar into `DATA_DIR/trash/` inside the transaction, then removes the row. If the transaction fails, the files move back. After the commit the trashed copy is removed. **This removal is permanent.** The app uses it for a document that is already in the Trash folder, and for Empty Trash, which deletes every document in that folder. The Delete button, and expiry, file a document into that folder instead. That is a folder move, not this.
 
 ## Invariants
 

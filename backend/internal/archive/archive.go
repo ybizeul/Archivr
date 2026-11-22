@@ -429,15 +429,64 @@ func (s *Service) undoMove(what string, id int64, move func(from, to string) err
 	}
 }
 
-// Delete deletes the document's rows, then moves the file into the trash, and
-// removes the trashed file only after the commit. A failed commit moves the file back.
+// Delete permanently removes a document: its rows, then its file.
+// The file moves into the trash directory inside the transaction and is removed
+// only after the commit. A failed commit moves the file back.
 func (s *Service) Delete(ctx context.Context, id int64) error {
+	_, err := s.deleteDocument(ctx, id, 0)
+	return err
+}
+
+// EmptyTrash permanently deletes every document in the Trash folder.
+// A document that leaves Trash before its turn is left where it is.
+// Already-deleted documents are skipped. If one delete fails, the rest are
+// still attempted. The count is how many were removed, and the error is the
+// first failure.
+func (s *Service) EmptyTrash(ctx context.Context) (int, error) {
+	trash, err := s.Store.FolderByPath(ctx, TrashName)
+	if err != nil {
+		return 0, err
+	}
+	ids, err := s.Store.DocumentIDsInFolder(ctx, trash.ID)
+	if err != nil {
+		return 0, err
+	}
+	deleted := 0
+	var first error
+	for _, id := range ids {
+		ok, err := s.deleteDocument(ctx, id, trash.ID)
+		if err != nil {
+			if errors.Is(err, store.ErrNotFound) {
+				continue
+			}
+			if first == nil {
+				first = err
+			}
+			s.logger().Warn("could not delete a document while emptying trash", "id", id, "error", err)
+			continue
+		}
+		if ok {
+			deleted++
+		}
+	}
+	return deleted, first
+}
+
+// deleteDocument removes one document. onlyFolder, when not zero, skips the
+// delete when the document is filed somewhere else, so emptying Trash cannot
+// remove a document that was restored after the list was read.
+// It reports whether a document was actually removed.
+func (s *Service) deleteDocument(ctx context.Context, id, onlyFolder int64) (bool, error) {
 	var undo func()
 	var trashed string
+	removed := false
 	err := s.Store.InTx(ctx, func(tx *store.Store) error {
 		cur, err := tx.GetDocument(ctx, id)
 		if err != nil {
 			return err
+		}
+		if onlyFolder != 0 && cur.FolderID != onlyFolder {
+			return nil
 		}
 		from, err := s.Layout.DocumentFile(cur.Folder.Path, cur.Filename)
 		if err != nil {
@@ -453,6 +502,7 @@ func (s *Service) Delete(ctx context.Context, id int64) error {
 			return err
 		}
 		trashed = dest
+		removed = true
 		undo = s.undoMove("delete document", id, storage.MoveFile, dest, from)
 		return nil
 	})
@@ -460,12 +510,15 @@ func (s *Service) Delete(ctx context.Context, id int64) error {
 		if undo != nil {
 			undo()
 		}
-		return err
+		return false, err
+	}
+	if !removed {
+		return false, nil
 	}
 	if err := storage.RemoveFile(trashed); err != nil {
 		s.logger().Warn("could not empty trash entry", "path", trashed, "error", err)
 	}
-	return nil
+	return true, nil
 }
 
 // writeSidecar keeps the recovery JSON next to the file. Failures are logged only.

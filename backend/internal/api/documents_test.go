@@ -542,6 +542,88 @@ func TestTrashStaysOutOfTheLibraryUntilOpened(t *testing.T) {
 	}
 }
 
+// Empty Trash removes every document in the Trash folder and leaves the rest filed.
+func TestEmptyTrashDeletesOnlyWhatIsInTrash(t *testing.T) {
+	f := newFixture(t)
+	c := readerCookie(t, f)
+
+	uploadID := func(name, title string) int64 {
+		t.Helper()
+		rec := f.upload(c, name, pdfData(title), title)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("upload %s: %d %s", name, rec.Code, rec.Body.String())
+		}
+		var doc struct {
+			ID int64 `json:"id"`
+		}
+		decodeInto(t, rec, &doc)
+		return doc.ID
+	}
+	keep := uploadID("keep.pdf", "Keep this")
+	goneA := uploadID("a.pdf", "Throw A")
+	goneB := uploadID("b.pdf", "Throw B")
+
+	trash, err := f.store.FolderByPath(context.Background(), archive.TrashName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []int64{keep, goneA, goneB} {
+		moved := f.do(http.MethodPatch, fmt.Sprintf("/api/v1/documents/%d", id), map[string]any{"folder_id": trash.ID}, c)
+		if moved.Code != http.StatusOK {
+			t.Fatalf("move %d to trash: %d %s", id, moved.Code, moved.Body.String())
+		}
+	}
+	// Restored before emptying, so it must survive.
+	restored := f.do(http.MethodPatch, fmt.Sprintf("/api/v1/documents/%d", keep), map[string]any{"folder_id": archive.InboxID}, c)
+	if restored.Code != http.StatusOK {
+		t.Fatalf("restore: %d %s", restored.Code, restored.Body.String())
+	}
+
+	if anon := f.do(http.MethodPost, "/api/v1/trash/empty", nil); anon.Code != http.StatusUnauthorized {
+		t.Fatalf("anonymous status = %d", anon.Code)
+	}
+	if reader := f.do(http.MethodPost, "/api/v1/trash/empty", nil, c); reader.Code != http.StatusForbidden {
+		t.Fatalf("regular user status = %d, want 403", reader.Code)
+	}
+
+	admin := adminCookie(t, f)
+	emptied := f.do(http.MethodPost, "/api/v1/trash/empty", nil, admin)
+	if emptied.Code != http.StatusOK {
+		t.Fatalf("empty trash: %d %s", emptied.Code, emptied.Body.String())
+	}
+	var result struct {
+		Deleted int `json:"deleted"`
+	}
+	decodeInto(t, emptied, &result)
+	if result.Deleted != 2 {
+		t.Fatalf("deleted = %d, want 2", result.Deleted)
+	}
+
+	if got := f.do(http.MethodGet, fmt.Sprintf("/api/v1/documents/%d", keep), nil, c); got.Code != http.StatusOK {
+		t.Fatalf("restored document: %d %s", got.Code, got.Body.String())
+	}
+	for _, id := range []int64{goneA, goneB} {
+		if got := f.do(http.MethodGet, fmt.Sprintf("/api/v1/documents/%d", id), nil, c); got.Code != http.StatusNotFound {
+			t.Fatalf("document %d after empty: %d %s", id, got.Code, got.Body.String())
+		}
+	}
+
+	var list struct {
+		Total int `json:"total"`
+	}
+	inTrash := f.do(http.MethodGet, fmt.Sprintf("/api/v1/documents?folder=%d", trash.ID), nil, c)
+	decodeInto(t, inTrash, &list)
+	if list.Total != 0 {
+		t.Fatalf("trash still holds %d documents", list.Total)
+	}
+
+	again := f.do(http.MethodPost, "/api/v1/trash/empty", nil, admin)
+	decodeInto(t, again, &result)
+	if again.Code != http.StatusOK || result.Deleted != 0 {
+		t.Fatalf("second empty = %d %+v", again.Code, result)
+	}
+}
+
 func TestUnknownAPIPathIsJSON404(t *testing.T) {
 	f := newFixture(t)
 	r := f.do(http.MethodGet, "/api/v1/nope", nil)
