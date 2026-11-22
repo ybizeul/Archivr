@@ -7,6 +7,10 @@ import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 
 pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
+// The pdf.js files copied into public/pdfjs by scripts/copy-pdfjs-assets.mjs. Without them some
+// PDFs draw differently: CJK text, non-embedded fonts, JBIG2 and JPEG 2000 images, and ICC colours.
+const factory = `${import.meta.env.BASE_URL}pdfjs/`
+
 /**
  * A PDF drawn page by page with pdf.js, one canvas per page, each as wide as the sheet.
  * The turn is part of each page's viewport, so the canvas comes out already turned. Nothing is
@@ -19,7 +23,14 @@ export function PdfStage({ src, title, turn }: { src: string; title: string; tur
 
   useEffect(() => {
     let cancelled = false
-    const loading = pdfjs.getDocument({ url: src })
+    const loading = pdfjs.getDocument({
+      url: src,
+      cMapUrl: `${factory}cmaps/`,
+      cMapPacked: true,
+      standardFontDataUrl: `${factory}standard_fonts/`,
+      wasmUrl: `${factory}wasm/`,
+      iccUrl: `${factory}iccs/`,
+    })
     loading.promise
       .then(async (doc: PDFDocumentProxy) => {
         const list = await Promise.all(Array.from({ length: doc.numPages }, (_, i) => doc.getPage(i + 1)))
