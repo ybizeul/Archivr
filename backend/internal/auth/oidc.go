@@ -145,27 +145,32 @@ func (s *OIDCService) Complete(ctx context.Context, cfg Settings, redirectURI, s
 }
 
 // EndSessionURL returns the provider's RP-initiated logout URL, which ends the session at the provider
-// and then sends the browser to postLogoutURI. It returns "" when the provider does not offer one.
-func (s *OIDCService) EndSessionURL(ctx context.Context, cfg Settings, postLogoutURI string) (string, error) {
+// and then sends the browser to postLogoutURI. The endpoint is logoutEndpoint when set, otherwise the
+// discovery document's end_session_endpoint. It returns "" when there is no endpoint.
+func (s *OIDCService) EndSessionURL(ctx context.Context, cfg Settings, logoutEndpoint, postLogoutURI string) (string, error) {
 	if !cfg.OIDCReady() {
 		return "", ErrOIDCNotConfigured
 	}
-	provider, err := discover(ctx, cfg.OIDCIssuer)
-	if err != nil {
-		return "", err
+	endpoint := logoutEndpoint
+	if endpoint == "" {
+		provider, err := discover(ctx, cfg.OIDCIssuer)
+		if err != nil {
+			return "", err
+		}
+		var meta struct {
+			EndSessionEndpoint string `json:"end_session_endpoint"`
+		}
+		if err := provider.Claims(&meta); err != nil {
+			return "", fmt.Errorf("read provider metadata: %w", err)
+		}
+		endpoint = meta.EndSessionEndpoint
 	}
-	var meta struct {
-		EndSessionEndpoint string `json:"end_session_endpoint"`
-	}
-	if err := provider.Claims(&meta); err != nil {
-		return "", fmt.Errorf("read provider metadata: %w", err)
-	}
-	if meta.EndSessionEndpoint == "" {
+	if endpoint == "" {
 		return "", nil
 	}
-	u, err := url.Parse(meta.EndSessionEndpoint)
+	u, err := url.Parse(endpoint)
 	if err != nil {
-		return "", fmt.Errorf("invalid end_session_endpoint: %w", err)
+		return "", fmt.Errorf("invalid logout endpoint: %w", err)
 	}
 	q := u.Query()
 	q.Set("client_id", cfg.OIDCClientID)

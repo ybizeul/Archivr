@@ -32,6 +32,7 @@ Without Tesseract the app still runs. Documents are marked OCR `skipped`, and **
 | `PUBLIC_URL` | derived from the request | External address, for the SSO callback and links. When unset, derived from the request, using `X-Forwarded-Host` and `X-Forwarded-Proto` if `TRUST_PROXY` is set. |
 | `DATA_DIR` | `./data` | Holds `archivr.db`, `documents/`, `trash/`, `cache/`, and `ingest/` by default. |
 | `WATCH_DIR` | `DATA_DIR/ingest` | Folder polled for new files. Imported files move to `.imported/`, rejects to `.rejected/`. |
+| `OIDC_LOGOUT_URL` | from the provider's discovery document | Provider logout endpoint used when signing out with SSO. Set it when the provider does not advertise `end_session_endpoint`, or to use a different one. When set, sign-out skips discovery. |
 | `TRUST_PROXY` | off | Set to any value behind a proxy you control. Reads `X-Forwarded-For`, `X-Forwarded-Host` and `X-Forwarded-Proto`. |
 | `JWT_SECRET` | random per run | Signs session cookies and share links. Set it, or everyone is signed out and every share link stops working on restart. |
 | `INIT_ADMIN_EMAIL` | `admin@archivr.local` | The first admin account. |

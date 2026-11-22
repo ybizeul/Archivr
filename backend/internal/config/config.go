@@ -19,6 +19,7 @@ type Config struct {
 	JWTSecret      string // JWT_SECRET, a random key is generated at start if empty
 	InitPassword   string // INIT_PASSWORD, bootstrap admin password, reset on each start while set
 	InitAdminEmail string // INIT_ADMIN_EMAIL, bootstrap admin email, default admin@archivr.local
+	OIDCLogoutURL  string // OIDC_LOGOUT_URL, provider logout endpoint. Overrides end_session_endpoint from discovery. Optional
 	TrustProxy     bool   // TRUST_PROXY, use X-Forwarded-For for the client IP. Enable only behind your proxy
 	Debug          bool   // DEBUG, verbose logging
 }
@@ -33,6 +34,7 @@ func Load() (Config, error) {
 		JWTSecret:      os.Getenv("JWT_SECRET"),
 		InitPassword:   os.Getenv("INIT_PASSWORD"),
 		InitAdminEmail: strings.ToLower(strings.TrimSpace(envOr("INIT_ADMIN_EMAIL", "admin@archivr.local"))),
+		OIDCLogoutURL:  strings.TrimSpace(os.Getenv("OIDC_LOGOUT_URL")),
 		TrustProxy:     os.Getenv("TRUST_PROXY") != "",
 		Debug:          os.Getenv("DEBUG") != "",
 	}
@@ -56,6 +58,9 @@ func Load() (Config, error) {
 	}
 	if c.PublicURL != "" && !strings.HasPrefix(c.PublicURL, "http://") && !strings.HasPrefix(c.PublicURL, "https://") {
 		return Config{}, fmt.Errorf("PUBLIC_URL must start with http:// or https://")
+	}
+	if c.OIDCLogoutURL != "" && !strings.HasPrefix(c.OIDCLogoutURL, "http://") && !strings.HasPrefix(c.OIDCLogoutURL, "https://") {
+		return Config{}, fmt.Errorf("OIDC_LOGOUT_URL must start with http:// or https://")
 	}
 	if !strings.Contains(c.InitAdminEmail, "@") {
 		return Config{}, fmt.Errorf("INIT_ADMIN_EMAIL must be an email address")

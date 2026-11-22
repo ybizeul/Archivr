@@ -99,7 +99,7 @@ func (s *server) issueSession(w http.ResponseWriter, r *http.Request, user store
 func (s *server) logout(w http.ResponseWriter, r *http.Request) {
 	clearSessionCookie(w, r)
 	if settings, err := auth.LoadSettings(r.Context(), s.Store); err == nil && settings.OIDCReady() {
-		target, err := s.OIDC.EndSessionURL(r.Context(), settings, s.publicBase(r)+signedOutPath)
+		target, err := s.OIDC.EndSessionURL(r.Context(), settings, s.OIDCLogoutURL, s.publicBase(r)+signedOutPath)
 		if err == nil && target != "" {
 			writeJSON(w, http.StatusOK, map[string]string{"redirect": target})
 			return

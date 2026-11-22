@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -230,5 +231,25 @@ func TestSettingsValidation(t *testing.T) {
 	ok := Settings{OIDCEnabled: true, OIDCIssuer: "https://a", OIDCClientID: "c", DisableLocalLogin: true}.Normalize()
 	if err := ok.Validate(); err != nil {
 		t.Fatalf("valid oidc-only config rejected: %v", err)
+	}
+}
+
+func TestEndSessionURLUsesConfiguredEndpointWithoutDiscovery(t *testing.T) {
+	// The issuer is unreachable. Discovery would fail, so a result proves it was skipped.
+	cfg := Settings{OIDCEnabled: true, OIDCIssuer: "http://127.0.0.1:1", OIDCClientID: "archivr"}
+	got, err := NewOIDCService().EndSessionURL(context.Background(), cfg, "https://idp.example.org/logout?tenant=x", "https://archive.example.org/login?signed_out=1")
+	if err != nil {
+		t.Fatalf("EndSessionURL: %v", err)
+	}
+	u, err := url.Parse(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u.Scheme+"://"+u.Host+u.Path != "https://idp.example.org/logout" {
+		t.Fatalf("endpoint = %q", got)
+	}
+	if u.Query().Get("tenant") != "x" || u.Query().Get("client_id") != "archivr" ||
+		u.Query().Get("post_logout_redirect_uri") != "https://archive.example.org/login?signed_out=1" {
+		t.Fatalf("query = %q", u.RawQuery)
 	}
 }

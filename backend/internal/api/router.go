@@ -28,14 +28,16 @@ const (
 
 // Deps are the collaborators the handlers need. Now is injected so tests can control time.
 type Deps struct {
-	Store      *store.Store
-	Sessions   *auth.Sessions
-	Shares     *auth.Shares // share-link signer. Derived from Sessions when nil
-	OIDC       *auth.OIDCService
-	Limiter    *auth.LoginLimiter
-	PublicURL  string // external base URL, e.g. https://archive.example.org. Derived from the request when empty
-	TrustProxy bool   // trust X-Forwarded-For/-Host/-Proto for the client IP and public URL. Enable only behind a proxy you control
-	Now        func() time.Time
+	Store     *store.Store
+	Sessions  *auth.Sessions
+	Shares    *auth.Shares // share-link signer. Derived from Sessions when nil
+	OIDC      *auth.OIDCService
+	Limiter   *auth.LoginLimiter
+	PublicURL string // external base URL, e.g. https://archive.example.org. Derived from the request when empty
+	// OIDCLogoutURL is the provider's logout endpoint. When set, it is used instead of the discovery document's end_session_endpoint.
+	OIDCLogoutURL string
+	TrustProxy    bool // trust X-Forwarded-For/-Host/-Proto for the client IP and public URL. Enable only behind a proxy you control
+	Now           func() time.Time
 
 	Archive   *archive.Service
 	Ingest    *ingest.Importer
