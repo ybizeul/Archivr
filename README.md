@@ -115,7 +115,7 @@ mise run build-frontend            # copies the web build into the Go embed dire
 
 ## Known limits
 
-- **Deleting a document is permanent.** The file and its sidecar are removed once the delete is committed. There is no undo.
+- **Deleting a document files it in Trash.** Open Trash, at the bottom of the folder list, to restore it or delete it for good. Deleting it from Trash removes the file and its sidecar. That step cannot be undone.
 - HEIC photos are rejected with a message. Convert them to JPEG or PNG first.
 - Email intake reads unread messages only. Mail is marked read after its attachments are filed.
 - Files over 100 MB are refused.

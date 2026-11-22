@@ -44,7 +44,7 @@ A file move and a database commit cannot be made atomic together, so every chang
 
 Moves carry the sidecar with them. A database failure before the move leaves the file untouched, and a test covers this.
 
-Deleting a document deletes its rows, then moves its file into `trash/`, then commits. After the commit the trashed file and its sidecar are removed. **Deletion is permanent.** The trash is a holding area for rollback, not a recovery bin.
+Deleting a document deletes its rows, then moves its file into `trash/`, then commits. After the commit the trashed file and its sidecar are removed. **That removal is permanent.** `DATA_DIR/trash/` is a holding area for rollback, not a recovery bin. The Trash folder in the library is the recovery bin: the Delete button and the expiry sweep file documents there, and only a document already in that folder is removed this way.
 
 ### Interrupted moves and the startup reconciler
 

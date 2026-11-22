@@ -133,7 +133,7 @@ export function folderTitle(f: { is_system: boolean; path: string; name: string 
   return f.is_system ? folderName(f) : folderLabel(f.path)
 }
 
-/** Whether a folder is the Trash system folder, where documents go once they expire. */
+/** Whether a folder is the Trash system folder, where deleted and expired documents go. */
 export function isTrash(f: { is_system: boolean; path: string }): boolean {
   return f.is_system && f.path.toLowerCase() === 'trash'
 }

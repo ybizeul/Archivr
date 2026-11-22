@@ -14,6 +14,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/archivr/backend/internal/archive"
 	"github.com/archivr/backend/internal/store"
 )
 
@@ -485,6 +486,59 @@ func TestThumbnailForImage(t *testing.T) {
 	th := f.do(http.MethodGet, fmt.Sprintf("/api/v1/documents/%d/thumbnail", doc.ID), nil, c)
 	if th.Code != http.StatusOK || th.Header().Get("Content-Type") != "image/jpeg" {
 		t.Fatalf("thumbnail: %d %q", th.Code, th.Header().Get("Content-Type"))
+	}
+}
+
+// Moving a document into Trash takes it out of the library and out of search.
+// Opening the Trash folder lists it again.
+func TestTrashStaysOutOfTheLibraryUntilOpened(t *testing.T) {
+	f := newFixture(t)
+	c := readerCookie(t, f)
+	rec := f.upload(c, "receipt.pdf", pdfData("receipt"), "Shop receipt")
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("upload: %d %s", rec.Code, rec.Body.String())
+	}
+	var doc struct {
+		ID int64 `json:"id"`
+	}
+	decodeInto(t, rec, &doc)
+
+	trash, err := f.store.FolderByPath(context.Background(), archive.TrashName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var list struct {
+		Items []struct {
+			ID int64 `json:"id"`
+		} `json:"items"`
+		Total int `json:"total"`
+	}
+	before := f.do(http.MethodGet, "/api/v1/documents?q=receipt", nil, c)
+	decodeInto(t, before, &list)
+	if list.Total != 1 || list.Items[0].ID != doc.ID {
+		t.Fatalf("search before trash = %+v, want document %d", list, doc.ID)
+	}
+
+	moved := f.do(http.MethodPatch, fmt.Sprintf("/api/v1/documents/%d", doc.ID), map[string]any{"folder_id": trash.ID}, c)
+	if moved.Code != http.StatusOK {
+		t.Fatalf("move to trash: %d %s", moved.Code, moved.Body.String())
+	}
+
+	all := f.do(http.MethodGet, "/api/v1/documents", nil, c)
+	decodeInto(t, all, &list)
+	if list.Total != 0 || len(list.Items) != 0 {
+		t.Fatalf("library still lists the trashed document: %+v", list)
+	}
+	search := f.do(http.MethodGet, "/api/v1/documents?q=receipt", nil, c)
+	decodeInto(t, search, &list)
+	if list.Total != 0 {
+		t.Fatalf("search still finds the trashed document: %+v", list)
+	}
+
+	inTrash := f.do(http.MethodGet, fmt.Sprintf("/api/v1/documents?folder=%d", trash.ID), nil, c)
+	decodeInto(t, inTrash, &list)
+	if list.Total != 1 || len(list.Items) != 1 || list.Items[0].ID != doc.ID {
+		t.Fatalf("trash folder = %+v, want document %d", list, doc.ID)
 	}
 }
 

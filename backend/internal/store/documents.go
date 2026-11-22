@@ -76,17 +76,18 @@ type NewDocumentRow struct {
 
 // DocFilter narrows and orders a document listing.
 type DocFilter struct {
-	Query     string // full-text query, words are ANDed and prefix-matched
-	FolderID  int64  // 0 for any folder
-	Subtree   bool   // include documents in subfolders of FolderID
-	TypeID    int64  // 0 for any type
-	Tag       string // exact tag name, case-insensitive
-	From      string // document_date lower bound, YYYY-MM-DD
-	To        string // document_date upper bound, YYYY-MM-DD
-	OCRStatus string
-	Sort      string // relevance, newest, oldest, date, title
-	Limit     int
-	Offset    int
+	Query           string // full-text query, words are ANDed and prefix-matched
+	FolderID        int64  // 0 for any folder
+	Subtree         bool   // include documents in subfolders of FolderID
+	TypeID          int64  // 0 for any type
+	Tag             string // exact tag name, case-insensitive
+	From            string // document_date lower bound, YYYY-MM-DD
+	To              string // document_date upper bound, YYYY-MM-DD
+	OCRStatus       string
+	Sort            string // relevance, newest, oldest, date, title
+	Limit           int
+	Offset          int
+	ExcludeFolderID int64 // when set, documents in this folder are left out
 }
 
 const (
@@ -191,6 +192,10 @@ func (s *Store) ListDocuments(ctx context.Context, f DocFilter) ([]Document, int
 			where = append(where, `d.folder_id = ?`)
 		}
 		args = append(args, f.FolderID)
+	} else if f.ExcludeFolderID != 0 {
+		// "All documents" and global search. A chosen folder, including Trash, is not excluded.
+		where = append(where, `d.folder_id <> ?`)
+		args = append(args, f.ExcludeFolderID)
 	}
 	if f.TypeID != 0 {
 		where = append(where, `d.type_id = ?`)

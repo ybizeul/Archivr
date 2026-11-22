@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { Alert, Anchor, Autocomplete, Badge, Box, Button, CopyButton, Group, Loader, Modal, ScrollArea, Select, Stack, TagsInput, Text, TextInput, Title, ActionIcon, Tooltip } from '@mantine/core'
+import { Alert, Anchor, Autocomplete, Badge, Box, Button, CopyButton, Group, Loader, ScrollArea, Select, Stack, TagsInput, Text, TextInput, Title, ActionIcon, Tooltip } from '@mantine/core'
 import { notifications } from '@mantine/notifications'
 import { IconArrowLeft, IconCopy, IconCheck, IconShare } from '@tabler/icons-react'
-import { useCorrespondents, useDeleteDocument, useDocument, useFolders, usePatchDocument, useReOCR, useTags, useTypes } from '../api/queries'
+import { useCorrespondents, useDocument, useFolders, usePatchDocument, useReOCR, useTags, useTypes } from '../api/queries'
 import type { DocumentDetail } from '../api/types'
 import { DateField } from '../components/DateField'
+import { DeleteDocumentDialog } from '../components/DeleteDocumentDialog'
 import { DocViewer } from '../components/DocViewer'
 import { ShareDialog } from '../components/ShareDialog'
 import { SheetBar } from '../components/SheetBar'
@@ -45,7 +46,6 @@ function DocumentView({ doc }: { doc: DocumentDetail }) {
   const tags = useTags()
   const save = usePatchDocument()
   const reocr = useReOCR()
-  const remove = useDeleteDocument()
 
   const [title, setTitle] = useState(doc.title)
   const [date, setDate] = useState(doc.document_date ?? '')
@@ -93,7 +93,8 @@ function DocumentView({ doc }: { doc: DocumentDetail }) {
     label: folderTitle(f),
   }))
 
-  const inTrash = (folders.data ?? []).some((f) => isTrash(f) && f.id === doc.folder_id)
+  const trash = (folders.data ?? []).find(isTrash)
+  const inTrash = trash?.id === doc.folder_id
 
   return (
     <Box className="ax-detail">
@@ -114,7 +115,7 @@ function DocumentView({ doc }: { doc: DocumentDetail }) {
             Share
           </Button>
           <Button variant="subtle" color="oxide" size="xs" onClick={() => setConfirmDelete(true)}>
-            Delete
+            {inTrash ? 'Delete permanently' : 'Delete'}
           </Button>
         </Group>
       </Group>
@@ -186,7 +187,7 @@ function DocumentView({ doc }: { doc: DocumentDetail }) {
                 <Alert color="gray" variant="light">
                   {doc.valid_until
                     ? `Moved here because it was valid until ${formatDate(doc.valid_until)}. Choose another folder and save to restore it; the date is then cleared.`
-                    : 'This document is in the Trash.'}
+                    : 'This document is in the Trash. Choose another folder and save to restore it.'}
                 </Alert>
               )}
               <Group justify="flex-end">
@@ -279,33 +280,17 @@ function DocumentView({ doc }: { doc: DocumentDetail }) {
 
       <ShareDialog opened={sharing} onClose={() => setSharing(false)} docId={doc.id} title={doc.title} />
 
-      <Modal opened={confirmDelete} onClose={() => setConfirmDelete(false)} title={`Delete No. ${doc.id}?`} centered>
-        <Stack>
-          <Text size="sm">
-            This removes the file and its search entry. The number is not reused. This cannot be undone.
-          </Text>
-          <Group justify="flex-end">
-            <Button variant="default" onClick={() => setConfirmDelete(false)}>
-              Keep it
-            </Button>
-            <Button
-              color="oxide"
-              loading={remove.isPending}
-              onClick={() =>
-                remove.mutate(doc.id, {
-                  onSuccess: () => {
-                    notifications.show({ color: 'prussian', message: `Deleted No. ${doc.id}` })
-                    navigate('/library')
-                  },
-                  onError: (err) => notifications.show({ color: 'red', title: "Couldn't delete", message: errorMessage(err) }),
-                })
-              }
-            >
-              Delete document
-            </Button>
-          </Group>
-        </Stack>
-      </Modal>
+      <DeleteDocumentDialog
+        opened={confirmDelete}
+        docId={doc.id}
+        inTrash={inTrash}
+        trashId={trash?.id}
+        onClose={() => setConfirmDelete(false)}
+        onDone={() => {
+          setConfirmDelete(false)
+          navigate(inTrash || trash === undefined ? '/library' : `/library?folder=${trash.id}`)
+        }}
+      />
     </Box>
   )
 }

@@ -16,7 +16,7 @@ Mirrors the folder tree under `DATA_DIR/documents`.
 | `parent_id` | `NULL` at the top level. `ON DELETE RESTRICT`: a folder with children cannot be removed. |
 | `name` | No `/`, not empty. |
 | `path` | Full path such as `Home/Lease`. Unique, and unique case-insensitively (`folders_path_nocase`). |
-| `is_system` | `1` for INBOX and Trash. They cannot be renamed, moved or deleted. Trash (path `Trash`, added by migration `0007`) is where expired documents go. It is an ordinary folder on disk, separate from `DATA_DIR/trash`. |
+| `is_system` | `1` for INBOX and Trash. They cannot be renamed, moved or deleted. Trash (path `Trash`, added by migration `0007`) is where deleted documents and expired documents go. It is an ordinary folder on disk, separate from `DATA_DIR/trash`. |
 
 ### `documents`
 
@@ -131,11 +131,11 @@ A sidecar write that fails is logged, and the change still stands. The database 
 
 ### Expiry
 
-On start and then every hour, `archive.Service.ExpireDocuments` moves each document whose `valid_until` is before today (server local time) into the Trash folder, the same way a manual move works: the file, sidecar and row change together. Documents in Trash stay searchable and can be moved back out.
+On start and then every hour, `archive.Service.ExpireDocuments` moves each document whose `valid_until` is before today (server local time) into the Trash folder, the same way a manual move works: the file, sidecar and row change together. Deleting a document from the app files it there too. Documents in Trash can be moved back out. The library's "all documents" view and global search leave Trash out; opening the Trash folder shows them. Deleting a document that is already in Trash removes the row and the file. |
 
 ### Delete
 
-Deleting moves the file and its sidecar into `trash/` inside the transaction, then removes the row. If the transaction fails, the files move back. After the commit the trashed copy is removed. **Deletion is permanent.**
+`DELETE /documents/{id}` moves the file and its sidecar into `DATA_DIR/trash/` inside the transaction, then removes the row. If the transaction fails, the files move back. After the commit the trashed copy is removed. **This removal is permanent.** The app uses it for a document that is already in the Trash folder. The Delete button, and expiry, file a document into that folder instead. That is a folder move, not this.
 
 ## Invariants
 

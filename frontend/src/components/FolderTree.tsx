@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react'
 import { ActionIcon, Box, Button, Group, Menu, Modal, Select, Stack, Text, TextInput, UnstyledButton } from '@mantine/core'
 import { notifications } from '@mantine/notifications'
-import { IconDots, IconFolder, IconFolderOpen, IconPlus } from '@tabler/icons-react'
+import { IconDots, IconFolder, IconFolderOpen, IconPlus, IconTrash } from '@tabler/icons-react'
 import { useFolderMutations, useFolders } from '../api/queries'
 import type { Folder } from '../api/types'
-import { errorMessage, folderName } from '../lib/format'
+import { errorMessage, folderName, isTrash } from '../lib/format'
 
 interface FolderTreeProps {
   selected?: number
@@ -30,10 +30,12 @@ function buildTree(folders: Folder[]): Node[] {
   return make(null)
 }
 
-/** The folder tree in the library. INBOX and Trash are system folders: they are shown but cannot be changed. */
+/** The folder tree in the library. INBOX and Trash are system folders: they are shown but cannot be changed. Trash sits at the bottom, apart from the folders you file into. */
 export function FolderTree({ selected, onSelect }: FolderTreeProps) {
   const folders = useFolders()
-  const tree = useMemo(() => buildTree(folders.data ?? []), [folders.data])
+  const all = folders.data ?? []
+  const trash = all.find(isTrash)
+  const tree = useMemo(() => buildTree((folders.data ?? []).filter((f) => !isTrash(f))), [folders.data])
   const [creating, setCreating] = useState<{ parent?: number } | null>(null)
   const [renaming, setRenaming] = useState<Folder | null>(null)
   const [deleting, setDeleting] = useState<Folder | null>(null)
@@ -102,6 +104,26 @@ export function FolderTree({ selected, onSelect }: FolderTreeProps) {
       </UnstyledButton>
 
       {tree.map((n) => renderNode(n, 0))}
+
+      {trash && (
+        <Box className="ax-tree-trash">
+          <Group gap={2} wrap="nowrap" className={`ax-tree-row${selected === trash.id ? ' active' : ''}`}>
+            <UnstyledButton
+              className="ax-tree-link"
+              onClick={() => onSelect(trash.id)}
+              aria-current={selected === trash.id ? 'true' : undefined}
+            >
+              <IconTrash size={16} stroke={1.8} className="ax-trash-icon" />
+              <Text component="span" size="sm" truncate className="ax-tree-name">
+                {folderName(trash)}
+              </Text>
+              <Text component="span" size="xs" c={trash.document_count > 0 ? 'oxide' : 'dimmed'} className="ax-mono">
+                {trash.document_count}
+              </Text>
+            </UnstyledButton>
+          </Group>
+        </Box>
+      )}
 
       <FolderDialog
         opened={creating !== null}

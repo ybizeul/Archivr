@@ -9,7 +9,7 @@ import { DateField } from '../components/DateField'
 import { FolderTree } from '../components/FolderTree'
 import { Snippet } from '../components/Snippet'
 import { UploadButton } from '../components/UploadButton'
-import { accession, formatDate, folderLabel, folderTitle, OCR_LABEL } from '../lib/format'
+import { accession, formatDate, folderLabel, folderTitle, isTrash, OCR_LABEL } from '../lib/format'
 
 const PAGE_SIZE = 50
 
@@ -248,7 +248,7 @@ export function LibraryPage() {
                 w={{ base: '100%', sm: 170 }}
                 size="sm"
               />
-              {folder !== undefined && (
+              {folder !== undefined && !(currentFolder && isTrash(currentFolder)) && (
                 <Switch
                   className="ax-filter-wide"
                   label="Include subfolders"
@@ -271,10 +271,21 @@ export function LibraryPage() {
               </Box>
             ) : docs.data?.items.length === 0 ? (
               <Box p="xl">
-                <Text fw={600}>Nothing matches.</Text>
-                <Text c="dimmed" size="sm">
-                  Try fewer filters, or search for a shorter word.
-                </Text>
+                {currentFolder && isTrash(currentFolder) && !q && !type && !tag && !from && !to && !ocr ? (
+                  <>
+                    <Text fw={600}>Trash is empty.</Text>
+                    <Text c="dimmed" size="sm">
+                      Documents you delete wait here. File one into another folder to restore it.
+                    </Text>
+                  </>
+                ) : (
+                  <>
+                    <Text fw={600}>Nothing matches.</Text>
+                    <Text c="dimmed" size="sm">
+                      Try fewer filters, or search for a shorter word.
+                    </Text>
+                  </>
+                )}
               </Box>
             ) : isMobile ? (
               <DocumentCards items={docs.data?.items ?? []} showSnippet={q !== ''} onOpen={(id) => navigate(`/documents/${id}`)} />

@@ -7,7 +7,6 @@ import { Link, useSearchParams } from 'react-router-dom'
 import {
   useCorrespondents,
   useInboxQueue,
-  useDeleteDocument,
   useFolders,
   useSuggestions,
   useTags,
@@ -22,7 +21,8 @@ import { Stamp } from '../components/Stamp'
 import { UploadButton } from '../components/UploadButton'
 import { INBOX_ID } from '../lib/constants'
 import { NewFolder } from '../components/NewFolder'
-import { accession, errorMessage, folderLabel, formatDate, todayISO } from '../lib/format'
+import { DeleteDocumentDialog } from '../components/DeleteDocumentDialog'
+import { accession, errorMessage, folderLabel, formatDate, isTrash, todayISO } from '../lib/format'
 
 /** A keyboard command for the filing card. The timestamp makes a repeated key press count again. */
 interface Command {
@@ -76,7 +76,6 @@ export function TriagePage() {
   const queue = useInboxQueue()
   const { hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage } = queue
   const patch = usePatchDocument()
-  const remove = useDeleteDocument()
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [command, setCommand] = useState<Command | null>(null)
 
@@ -384,35 +383,20 @@ export function TriagePage() {
     </Modal>
   )
 
+  const trashId = folderList.data?.find(isTrash)?.id
   const deleteModal = (
-    <Modal opened={confirmDelete} onClose={() => setConfirmDelete(false)} title={`Delete No. ${viewDoc.id}?`} centered>
-      <Stack>
-        <Text size="sm">This removes the file and its search entry. The number is not reused. This cannot be undone.</Text>
-        <Group justify="flex-end">
-          <Button variant="default" onClick={() => setConfirmDelete(false)}>
-            Keep it
-          </Button>
-          <Button
-            color="oxide"
-            loading={remove.isPending}
-            onClick={() => {
-              const id = viewDoc.id
-              remove.mutate(id, {
-                onSuccess: () => {
-                  notifications.show({ color: 'prussian', message: `Deleted No. ${id}` })
-                  setConfirmDelete(false)
-                  if (nextAfterCurrent) setParams({ doc: String(nextAfterCurrent) }, { replace: true })
-                  else setParams({}, { replace: true })
-                },
-                onError: (err) => notifications.show({ color: 'red', title: "Couldn't delete", message: errorMessage(err) }),
-              })
-            }}
-          >
-            Delete document
-          </Button>
-        </Group>
-      </Stack>
-    </Modal>
+    <DeleteDocumentDialog
+      opened={confirmDelete}
+      docId={viewDoc.id}
+      inTrash={false}
+      trashId={trashId}
+      onClose={() => setConfirmDelete(false)}
+      onDone={() => {
+        setConfirmDelete(false)
+        if (nextAfterCurrent) setParams({ doc: String(nextAfterCurrent) }, { replace: true })
+        else setParams({}, { replace: true })
+      }}
+    />
   )
 
   if (isMobile) {

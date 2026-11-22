@@ -54,6 +54,17 @@ func (s *server) listDocuments(w http.ResponseWriter, r *http.Request, _ store.U
 	if q.Get("inbox") == "1" {
 		f.FolderID = archive.InboxID
 	}
+	// Trash is opened on purpose. The library and global search leave it out.
+	if f.FolderID == 0 {
+		trash, err := s.Store.FolderByPath(r.Context(), archive.TrashName)
+		if err != nil && !errors.Is(err, store.ErrNotFound) {
+			s.writeStoreError(w, err)
+			return
+		}
+		if err == nil {
+			f.ExcludeFolderID = trash.ID
+		}
+	}
 	if f.From != "" && !archive.ValidDate(f.From) {
 		writeError(w, http.StatusBadRequest, "INVALID", "from must be YYYY-MM-DD")
 		return

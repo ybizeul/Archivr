@@ -34,7 +34,7 @@ func sha256Hex(data []byte) string {
 // InboxID is the system INBOX folder. New documents land there.
 const InboxID int64 = 1
 
-// TrashName is the name of the system folder that holds expired documents.
+// TrashName is the name of the system folder that holds deleted and expired documents.
 const TrashName = "Trash"
 
 // ErrInvalid marks input the caller must correct. Handlers answer it with 400.
