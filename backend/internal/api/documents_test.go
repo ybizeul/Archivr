@@ -293,6 +293,63 @@ func TestCorrespondentIsAddedToListOnce(t *testing.T) {
 	}
 }
 
+// A type typed by name on a document is created when it is new. A second spelling in
+// a different case reuses it, and an empty name clears it.
+func TestTypeTypedByNameIsCreatedOnce(t *testing.T) {
+	f := newFixture(t)
+	c := readerCookie(t, f)
+
+	var ids [2]int64
+	for i, data := range [][]byte{pdfData("type-1"), pdfData("type-2")} {
+		rec := f.upload(c, fmt.Sprintf("doc-%d.pdf", i), data, "Doc")
+		var doc struct {
+			ID int64 `json:"id"`
+		}
+		decodeInto(t, rec, &doc)
+		typed := []string{"  Bank   statement ", "bank statement"}[i]
+		patch := f.do(http.MethodPatch, fmt.Sprintf("/api/v1/documents/%d", doc.ID), map[string]any{"type": typed}, c)
+		if patch.Code != http.StatusOK {
+			t.Fatalf("patch %d: %d %s", i, patch.Code, patch.Body.String())
+		}
+		var filed struct {
+			TypeID *int64 `json:"type_id"`
+			Type   *struct {
+				Name string `json:"name"`
+			} `json:"type"`
+		}
+		decodeInto(t, patch, &filed)
+		if filed.TypeID == nil || filed.Type == nil || filed.Type.Name != "Bank statement" {
+			t.Fatalf("doc %d: type = %+v (%v)", i, filed.Type, filed.TypeID)
+		}
+		ids[i] = *filed.TypeID
+
+		if i == 1 {
+			cleared := f.do(http.MethodPatch, fmt.Sprintf("/api/v1/documents/%d", doc.ID), map[string]any{"type": ""}, c)
+			var after struct {
+				TypeID *int64 `json:"type_id"`
+			}
+			decodeInto(t, cleared, &after)
+			if cleared.Code != http.StatusOK || after.TypeID != nil {
+				t.Fatalf("clear: %d %s", cleared.Code, cleared.Body.String())
+			}
+		}
+	}
+	if ids[0] != ids[1] {
+		t.Fatalf("same type in two spellings got IDs %d and %d", ids[0], ids[1])
+	}
+
+	list := f.do(http.MethodGet, "/api/v1/types", nil, c)
+	var page struct {
+		Items []struct {
+			Name string `json:"name"`
+		} `json:"items"`
+	}
+	decodeInto(t, list, &page)
+	if len(page.Items) != 1 {
+		t.Fatalf("types = %+v, want one", page.Items)
+	}
+}
+
 func TestPatchRejectsBadInput(t *testing.T) {
 	f := newFixture(t)
 	c := readerCookie(t, f)

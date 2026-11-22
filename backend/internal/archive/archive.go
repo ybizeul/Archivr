@@ -73,11 +73,14 @@ type NewDocument struct {
 
 // Patch is a partial update. A nil field is left unchanged.
 // An empty DocumentDate clears the date, a TypeID of 0 clears the type, and an
-// empty Correspondent clears the correspondent.
+// empty Correspondent clears the correspondent. Type sets the type by name and
+// creates it when it does not exist yet; an empty name clears the type. When both
+// Type and TypeID are given, Type wins.
 type Patch struct {
 	Title         *string   `json:"title"`
 	DocumentDate  *string   `json:"document_date"`
 	TypeID        *int64    `json:"type_id"`
+	Type          *string   `json:"type"`
 	Correspondent *string   `json:"correspondent"`
 	Tags          *[]string `json:"tags"`
 	FolderID      *int64    `json:"folder_id"`
@@ -292,6 +295,21 @@ func (s *Service) Update(ctx context.Context, id int64, p Patch) (store.Document
 					return invalid("unknown document type")
 				}
 				t := *p.TypeID
+				f.TypeID = &t
+			}
+		}
+		if p.Type != nil {
+			name := strings.Join(strings.Fields(*p.Type), " ")
+			if name == "" {
+				f.TypeID = nil
+			} else {
+				if _, _, err := checkType(name, ""); err != nil {
+					return err
+				}
+				t, err := tx.TypeRef(ctx, name)
+				if err != nil {
+					return err
+				}
 				f.TypeID = &t
 			}
 		}

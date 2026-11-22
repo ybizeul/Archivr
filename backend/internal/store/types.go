@@ -62,6 +62,21 @@ func (s *Store) InsertType(ctx context.Context, name, color string) (DocType, er
 	return s.TypeByID(ctx, id)
 }
 
+// TypeRef returns the ID of the type called name, matched without regard to case,
+// and adds the type when it does not exist yet.
+func (s *Store) TypeRef(ctx context.Context, name string) (int64, error) {
+	if _, err := s.q.ExecContext(ctx,
+		`INSERT INTO document_types (name) VALUES (?) ON CONFLICT(name) DO NOTHING`, name); err != nil {
+		return 0, fmt.Errorf("add type: %w", mapErr(err))
+	}
+	var id int64
+	if err := s.q.QueryRowContext(ctx,
+		`SELECT id FROM document_types WHERE name = ? COLLATE NOCASE`, name).Scan(&id); err != nil {
+		return 0, fmt.Errorf("find type: %w", err)
+	}
+	return id, nil
+}
+
 func (s *Store) UpdateType(ctx context.Context, id int64, name, color string) error {
 	if _, err := s.q.ExecContext(ctx,
 		`UPDATE document_types SET name = ?, color = ? WHERE id = ?`, name, color, id); err != nil {

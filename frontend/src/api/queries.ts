@@ -201,6 +201,7 @@ export function useInvalidateDocuments() {
       qc.invalidateQueries({ queryKey: keys.inboxCount }),
       qc.invalidateQueries({ queryKey: keys.folders }),
       qc.invalidateQueries({ queryKey: ['correspondents'] }),
+      qc.invalidateQueries({ queryKey: keys.types }),
       qc.invalidateQueries({ queryKey: ['tags'] }),
       qc.invalidateQueries({ queryKey: ['suggestions'] }),
     ])

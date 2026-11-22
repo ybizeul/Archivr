@@ -50,7 +50,6 @@ export function TriagePage() {
   const [bulkValues, setBulkValues] = useState<BulkChanges | null>(null)
   const [bulkRunning, setBulkRunning] = useState(false)
   const folderList = useFolders()
-  const typeList = useTypes()
 
   const allItems = queue.items
   const tagCounts = new Map<string, number>()
@@ -160,7 +159,7 @@ export function TriagePage() {
       // Added tags are merged into the ones each document already has.
       const body: DocumentPatch = { folder_id: changes.folderId }
       if (changes.documentDate) body.document_date = changes.documentDate
-      if (changes.typeId) body.type_id = changes.typeId
+      if (changes.type) body.type = changes.type
       if (changes.correspondent) body.correspondent = changes.correspondent
       if (changes.addTags.length > 0) body.tags = [...new Set([...d.tags, ...changes.addTags])]
       try {
@@ -183,7 +182,7 @@ export function TriagePage() {
     const body: DocumentPatch = {
       title: values.title,
       document_date: values.date,
-      type_id: values.typeId ?? 0,
+      type: values.type,
       correspondent: values.correspondent,
       tags: values.tags,
     }
@@ -245,9 +244,9 @@ export function TriagePage() {
                 <b>Date:</b> {formatDate(bulkValues.documentDate)}
               </Text>
             )}
-            {bulkValues.typeId && (
+            {bulkValues.type && (
               <Text size="sm">
-                <b>Type:</b> {typeList.data?.find((t) => t.id === bulkValues.typeId)?.name}
+                <b>Type:</b> {bulkValues.type}
               </Text>
             )}
             {bulkValues.correspondent && (
@@ -537,7 +536,7 @@ function QueueItem({ doc, selected, onSelect }: { doc: Document; selected: boole
 interface FilingValues {
   title: string
   date: string
-  typeId: number | null
+  type: string
   correspondent: string
   tags: string[]
   folderId: number | null
@@ -547,7 +546,7 @@ interface FilingValues {
 interface BulkChanges {
   folderId: number
   documentDate?: string
-  typeId?: number
+  type?: string
   correspondent?: string
   addTags: string[]
 }
@@ -581,7 +580,7 @@ function FilingCard({
 
   const [title, setTitle] = useState(doc.title)
   const [date, setDate] = useState(doc.document_date ?? '')
-  const [typeId, setTypeId] = useState<string | null>(doc.type_id ? String(doc.type_id) : null)
+  const [typeName, setTypeName] = useState(doc.type?.name ?? '')
   const [correspondent, setCorrespondent] = useState(doc.correspondent)
   const [tags, setTags] = useState<string[]>(doc.tags)
   const [folderId, setFolderId] = useState<string | null>(doc.folder_id !== INBOX_ID ? String(doc.folder_id) : null)
@@ -593,7 +592,7 @@ function FilingCard({
   const values = (): FilingValues => ({
     title: title.trim(),
     date,
-    typeId: typeId ? Number(typeId) : null,
+    type: typeName.trim(),
     correspondent: correspondent.trim(),
     tags,
     folderId: folderId ? Number(folderId) : null,
@@ -615,7 +614,7 @@ function FilingCard({
     onFileAll({
       folderId: v.folderId,
       documentDate: v.date !== (doc.document_date ?? '') ? v.date : undefined,
-      typeId: v.typeId !== doc.type_id ? (v.typeId ?? undefined) : undefined,
+      type: v.type !== (doc.type?.name ?? '') ? v.type : undefined,
       correspondent: v.correspondent !== doc.correspondent ? v.correspondent : undefined,
       // Tags already on the viewed document are not pushed to the others; only the newly added ones are.
       addTags: v.tags.filter((t) => !doc.tags.includes(t)),
@@ -644,7 +643,7 @@ function FilingCard({
   const folderData = (folders.data ?? [])
     .filter((f) => !f.is_system)
     .map((f) => ({ value: String(f.id), label: folderLabel(f.path) }))
-  const typeData = (types.data ?? []).map((t) => ({ value: String(t.id), label: t.name }))
+  const typeData = (types.data ?? []).map((t) => t.name)
   const correspondentData = (correspondents.data ?? []).map((c) => c.name)
   const tagData = (allTags.data ?? []).map((t) => t.name)
 
@@ -687,16 +686,15 @@ function FilingCard({
         </Group>
       )}
 
-      <Select
+      <Autocomplete
         label="Type"
         data={typeData}
-        value={typeId}
-        onChange={setTypeId}
-        clearable
-        searchable
+        value={typeName}
+        onChange={setTypeName}
         disabled={disabled}
         size="sm"
-        placeholder="No type"
+        maxLength={80}
+        placeholder="Pick one, or type a new type"
       />
 
       <Autocomplete

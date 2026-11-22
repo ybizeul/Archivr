@@ -100,6 +100,8 @@ export interface DocumentPatch {
   title?: string
   document_date?: string
   type_id?: number
+  /** A type by name. One that does not exist yet is created. An empty name clears the type. */
+  type?: string
   correspondent?: string
   tags?: string[]
   folder_id?: number

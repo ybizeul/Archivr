@@ -48,7 +48,7 @@ function DocumentView({ doc }: { doc: DocumentDetail }) {
 
   const [title, setTitle] = useState(doc.title)
   const [date, setDate] = useState(doc.document_date ?? '')
-  const [typeId, setTypeId] = useState<string | null>(doc.type_id ? String(doc.type_id) : null)
+  const [typeName, setTypeName] = useState(doc.type?.name ?? '')
   const [correspondent, setCorrespondent] = useState(doc.correspondent)
   const [tagList, setTagList] = useState<string[]>(doc.tags)
   const [folderId, setFolderId] = useState<string>(String(doc.folder_id))
@@ -67,7 +67,7 @@ function DocumentView({ doc }: { doc: DocumentDetail }) {
         patch: {
           title: title.trim(),
           document_date: date,
-          type_id: typeId ? Number(typeId) : 0,
+          type: typeName.trim(),
           correspondent: correspondent.trim(),
           tags: tagList,
           folder_id: Number(folderId),
@@ -120,14 +120,13 @@ function DocumentView({ doc }: { doc: DocumentDetail }) {
                 maxLength={200}
               />
               <DateField label="Date" value={date} onValueChange={setDate} />
-              <Select
+              <Autocomplete
                 label="Type"
-                data={(types.data ?? []).map((t) => ({ value: String(t.id), label: t.name }))}
-                value={typeId}
-                onChange={setTypeId}
-                clearable
-                searchable
-                placeholder="No type"
+                data={(types.data ?? []).map((t) => t.name)}
+                value={typeName}
+                onChange={setTypeName}
+                maxLength={80}
+                placeholder="Pick one, or type a new type"
               />
               <Autocomplete
                 label="Correspondent"
