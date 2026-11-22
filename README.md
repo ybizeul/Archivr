@@ -37,8 +37,21 @@ Without Tesseract the app still runs. Documents are marked OCR `skipped`, and **
 | `INIT_ADMIN_EMAIL` | `admin@archivr.local` | The first admin account. |
 | `INIT_PASSWORD` | unset | Bootstrap password. **Applied on every start while set.** It resets that account's password and role, so remove it once you can sign in. |
 | `DEBUG` | off | Verbose logging. |
+| `DB_PATH` | `DATA_DIR/archivr.db` | Location of the SQLite file. Set by the container when Litestream is enabled. |
+| `LITESTREAM_REPLICA_URL` | unset | Enables continuous replication with Litestream, for example `s3://bucket/archivr`. See below. |
 
 Mail intake (IMAP) and sign-in (OIDC) are configured in **Admin** after first start, not in environment variables. OCR languages and time limits are configured there too.
+
+### Replicating the database with Litestream
+
+The image includes [Litestream](https://litestream.io). It is off unless `LITESTREAM_REPLICA_URL` is set. Without it, the server runs as before.
+
+- With it, the database runs from the container's local disk at `/tmp/archivr.db` (`ARCHIVR_LOCAL_DB` changes this). It is not under `DATA_DIR`, so SQLite never writes its WAL to a network volume. Documents, the ingest folder, and the rest stay in `DATA_DIR`.
+- On every start, the database is restored from the newest replica. Litestream then streams every change while Archivr runs. Litestream runs Archivr as its child process and forwards shutdown signals, so `docker stop` and pod termination stop both cleanly.
+- If there is no replica yet but `DATA_DIR/archivr.db` exists, the container refuses to start. Starting would create an empty database beside the real documents. To enable replication on an existing archive, copy the database to the local path, then run `litestream replicate -once` with the same config so the first snapshot is written before the first start.
+- Without `LITESTREAM_REPLICA_URL`, nothing changes: the database stays in `DATA_DIR`.
+- For S3, set `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_REGION` when your provider needs it. For a local folder, use `file:///path/to/replica`.
+- Replication covers the database only. Keep the `documents/` folder backed up as well. Files written after the last replicated change can exist without a database row. Their sidecars still hold the metadata.
 
 ### Importing from Paperless-ngx
 

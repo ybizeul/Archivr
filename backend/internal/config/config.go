@@ -14,7 +14,7 @@ type Config struct {
 	ListenAddr     string // LISTEN_ADDR, default ":8080"
 	PublicURL      string // PUBLIC_URL, external base URL used for OIDC redirects. Optional
 	DataDir        string // DATA_DIR, default "./data"
-	DBPath         string // derived: DATA_DIR/archivr.db
+	DBPath         string // DB_PATH, the SQLite file. Default DATA_DIR/archivr.db
 	WatchDir       string // WATCH_DIR, default DATA_DIR/ingest
 	JWTSecret      string // JWT_SECRET, a random key is generated at start if empty
 	InitPassword   string // INIT_PASSWORD, bootstrap admin password, reset on each start while set
@@ -42,6 +42,13 @@ func Load() (Config, error) {
 	}
 	c.DataDir = abs
 	c.DBPath = filepath.Join(abs, "archivr.db")
+	if p := strings.TrimSpace(os.Getenv("DB_PATH")); p != "" {
+		dbPath, err := filepath.Abs(p)
+		if err != nil {
+			return Config{}, fmt.Errorf("DB_PATH: %w", err)
+		}
+		c.DBPath = dbPath
+	}
 	c.WatchDir = envOr("WATCH_DIR", filepath.Join(abs, "ingest"))
 
 	if strings.TrimSpace(c.ListenAddr) == "" {

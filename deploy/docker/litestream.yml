@@ -1,0 +1,11 @@
+# Litestream replication for the Archivr database. Used only when LITESTREAM_REPLICA_URL
+# is set; see deploy/docker/entrypoint.sh. Values are expanded from the environment.
+#
+# The database is the local copy at DB_PATH (for example /tmp/archivr.db), not the
+# one under DATA_DIR. The replica URL is for example s3://bucket/archivr, or
+# file:///backups/archivr. For S3, set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY
+# (and AWS_REGION if needed).
+dbs:
+  - path: ${DB_PATH}
+    replicas:
+      - url: ${LITESTREAM_REPLICA_URL}
