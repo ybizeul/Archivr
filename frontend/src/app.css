@@ -203,11 +203,11 @@ html[data-mantine-color-scheme='dark'] .mantine-Button-root[data-variant='filled
   cursor: zoom-out;
 }
 
-/* Filing stamp: carmine, reserved for this and the unfiled count. */
+/* Filing stamp: carmine, reserved for this and the unfiled count. Upper left, below the sheet bar. */
 .ax-stamp {
   position: absolute;
   top: 44px;
-  right: 16px;
+  left: 16px;
   z-index: 3;
   border: 2px solid var(--ax-stamp);
   color: var(--ax-stamp);

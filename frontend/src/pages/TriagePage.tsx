@@ -553,7 +553,7 @@ function Sheet({ doc, filed, stampRun }: { doc: Document; filed: boolean; stampR
     <Box className="ax-sheet" data-filed={filed || undefined}>
       <SheetBar id={doc.id} />
       <DocViewer key={doc.id} id={doc.id} mime={doc.mime} title={doc.title} rotation={doc.rotation} />
-      <Stamp run={stampRun} label={`Filed · ${filedDate()}`} />
+      <Stamp run={stampRun} label={`Filed on ${filedDate()}`} />
     </Box>
   )
 }
