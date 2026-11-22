@@ -45,7 +45,8 @@ export function DateField({ value, onValueChange, disabled, error, onBlur, ...re
       value={text}
       disabled={disabled}
       placeholder={rest.placeholder ?? pattern.placeholder}
-      inputMode="numeric"
+      // "numeric" gives phones a digit-only pad with no "/" or "-" key.
+      inputMode="text"
       autoComplete="off"
       error={error ?? (invalid ? `Use ${pattern.placeholder}` : undefined)}
       onChange={(e) => {
@@ -63,33 +64,44 @@ export function DateField({ value, onValueChange, disabled, error, onBlur, ...re
         onBlur?.(e)
       }}
       rightSection={
-        <>
+        // The real date input sits invisibly on top of the icon, so a tap lands on it directly.
+        // Mobile Safari and Chrome only open the picker from a genuine tap on a visible,
+        // sized date input, not from showPicker() on a hidden zero-size one.
+        <span style={{ position: 'relative', display: 'inline-flex', width: 22, height: 22 }}>
           <ActionIcon
+            component="span"
             variant="subtle"
             color="gray"
             size="sm"
-            aria-label="Choose a date"
             disabled={disabled}
-            // Keeps focus in the text field so its blur does not discard the draft mid-click.
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={openPicker}
+            style={{ pointerEvents: 'none' }}
           >
             <IconCalendar size={16} />
           </ActionIcon>
           <input
             ref={picker}
             type="date"
-            tabIndex={-1}
-            aria-hidden="true"
+            aria-label="Choose a date"
             value={value}
             disabled={disabled}
+            onClick={openPicker}
             onChange={(e) => {
               setDraft(null)
               onValueChange(e.currentTarget.value)
             }}
-            style={{ position: 'absolute', right: 0, bottom: 0, width: 0, height: 0, opacity: 0, pointerEvents: 'none' }}
+            style={{
+              position: 'absolute',
+              inset: 0,
+              width: '100%',
+              height: '100%',
+              opacity: 0,
+              cursor: 'pointer',
+              border: 0,
+              padding: 0,
+              fontSize: 16,
+            }}
           />
-        </>
+        </span>
       }
       rightSectionPointerEvents="all"
     />
