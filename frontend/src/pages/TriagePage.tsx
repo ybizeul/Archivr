@@ -233,7 +233,7 @@ export function TriagePage() {
       <Stack>
         <Text size="sm">
           {filtering ? `Every document tagged ${activeTags.join(' + ')}` : 'Every document in the inbox'} will be filed
-          with the details below. Each keeps its own title, and tags are added to the ones it already has.
+          with the folder and the fields you changed below. Each keeps its own title, and added tags are merged with its existing ones.
         </Text>
         {bulkValues && (
           <Stack gap={2}>
@@ -543,6 +543,15 @@ interface FilingValues {
   folderId: number | null
 }
 
+/** What File all applies to every document in the view. Undefined means the card left that field alone. */
+interface BulkChanges {
+  folderId: number
+  documentDate?: string
+  typeId?: number
+  correspondent?: string
+  addTags: string[]
+}
+
 function FilingCard({
   doc,
   disabled,
@@ -562,7 +571,7 @@ function FilingCard({
   onDelete: () => void
   bulkCount: number
   bulkBusy: boolean
-  onFileAll: (v: FilingValues) => void
+  onFileAll: (v: BulkChanges) => void
 }) {
   const folders = useFolders()
   const types = useTypes()
@@ -597,12 +606,20 @@ function FilingCard({
     onFile(v)
   }
 
-  // The title belongs to each document, so only the folder is required here.
+  // The title belongs to each document, so only the folder is required here. Only the fields the user
+  // changed on this card are passed on; anything left as the viewed document has it is not applied to the others.
   const submitFileAll = () => {
     setAttempted(true)
     const v = values()
     if (!v.folderId) return
-    onFileAll(v)
+    onFileAll({
+      folderId: v.folderId,
+      documentDate: v.date !== (doc.document_date ?? '') ? v.date : undefined,
+      typeId: v.typeId !== doc.type_id ? (v.typeId ?? undefined) : undefined,
+      correspondent: v.correspondent !== doc.correspondent ? v.correspondent : undefined,
+      // Tags already on the viewed document are not pushed to the others; only the newly added ones are.
+      addTags: v.tags.filter((t) => !doc.tags.includes(t)),
+    })
   }
 
   // A card mounted after an earlier command (for example, after J) must not replay it.
