@@ -18,6 +18,8 @@ import type {
   PaperlessMapping,
   PaperlessProgress,
   PaperlessSettings,
+  ShareLink,
+  SharedDocument,
   Suggestions,
   Tag,
   UserRow,
@@ -221,6 +223,26 @@ export function useDeleteDocument() {
   return useMutation({
     mutationFn: (id: number) => api.del<void>(`/documents/${id}`),
     onSuccess: () => invalidate(),
+  })
+}
+
+/** Signs a link to one document, valid for `expiresInSeconds`. Nothing changes on the document. */
+export function useCreateShare() {
+  return useMutation({
+    mutationFn: ({ id, expiresInSeconds }: { id: number; expiresInSeconds: number }) =>
+      api.post<ShareLink>(`/documents/${id}/share`, { expires_in_seconds: expiresInSeconds }),
+  })
+}
+
+/** The document a share link opens. Needs no sign-in. */
+export function useSharedDocument(token: string | undefined) {
+  return useQuery({
+    queryKey: ['share', token],
+    queryFn: () => api.get<SharedDocument>(`/shares/${encodeURIComponent(token ?? '')}`),
+    enabled: !!token,
+    // A bad or expired link will not get better by asking again.
+    retry: false,
+    staleTime: Infinity,
   })
 }
 

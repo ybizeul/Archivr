@@ -33,7 +33,7 @@ Without Tesseract the app still runs. Documents are marked OCR `skipped`, and **
 | `DATA_DIR` | `./data` | Holds `archivr.db`, `documents/`, `trash/`, `cache/`, and `ingest/` by default. |
 | `WATCH_DIR` | `DATA_DIR/ingest` | Folder polled for new files. Imported files move to `.imported/`, rejects to `.rejected/`. |
 | `TRUST_PROXY` | off | Set to any value behind a proxy you control. Reads `X-Forwarded-For`, `X-Forwarded-Host` and `X-Forwarded-Proto`. |
-| `JWT_SECRET` | random per run | Signs session cookies. Set it, or everyone is signed out on restart. |
+| `JWT_SECRET` | random per run | Signs session cookies and share links. Set it, or everyone is signed out and every share link stops working on restart. |
 | `INIT_ADMIN_EMAIL` | `admin@archivr.local` | The first admin account. |
 | `INIT_PASSWORD` | unset | Bootstrap password. **Applied on every start while set.** It resets that account's password and role, so remove it once you can sign in. |
 | `DEBUG` | off | Verbose logging. |

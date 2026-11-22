@@ -34,6 +34,7 @@ type fixture struct {
 	h        http.Handler
 	store    *store.Store
 	sessions *auth.Sessions
+	skew     time.Duration // added to the server clock, so tests can move time forward
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -73,9 +74,11 @@ func newFixture(t *testing.T) *fixture {
 
 	importer := &ingest.Importer{Archive: arch, Store: st}
 
+	f := &fixture{t: t, store: st, sessions: sessions}
 	h := NewRouter(Deps{
 		Store:     st,
 		Sessions:  sessions,
+		Now:       func() time.Time { return time.Now().Add(f.skew) },
 		OIDC:      auth.NewOIDCService(),
 		Limiter:   auth.NewLoginLimiter(15*time.Minute, 15*time.Minute, 8),
 		PublicURL: "https://archive.test",
@@ -87,7 +90,8 @@ func newFixture(t *testing.T) *fixture {
 		WatchDir:  filepath.Join(dataDir, "ingest"),
 		Log:       quiet,
 	})
-	return &fixture{t: t, h: h, store: st, sessions: sessions}
+	f.h = h
+	return f
 }
 
 func (f *fixture) do(method, path string, body any, cookies ...*http.Cookie) *httptest.ResponseRecorder {

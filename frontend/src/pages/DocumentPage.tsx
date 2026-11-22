@@ -2,11 +2,12 @@ import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Alert, Anchor, Autocomplete, Badge, Box, Button, CopyButton, Group, Loader, Modal, ScrollArea, Select, Stack, TagsInput, Text, TextInput, Title, ActionIcon, Tooltip } from '@mantine/core'
 import { notifications } from '@mantine/notifications'
-import { IconArrowLeft, IconCopy, IconCheck } from '@tabler/icons-react'
+import { IconArrowLeft, IconCopy, IconCheck, IconShare } from '@tabler/icons-react'
 import { useCorrespondents, useDeleteDocument, useDocument, useFolders, usePatchDocument, useReOCR, useTags, useTypes } from '../api/queries'
 import type { DocumentDetail } from '../api/types'
 import { DateField } from '../components/DateField'
 import { DocViewer } from '../components/DocViewer'
+import { ShareDialog } from '../components/ShareDialog'
 import { SheetBar } from '../components/SheetBar'
 import { errorMessage, folderLabel, formatBytes, formatDate, formatDateTime, OCR_LABEL } from '../lib/format'
 
@@ -53,6 +54,7 @@ function DocumentView({ doc }: { doc: DocumentDetail }) {
   const [tagList, setTagList] = useState<string[]>(doc.tags)
   const [folderId, setFolderId] = useState<string>(String(doc.folder_id))
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [sharing, setSharing] = useState(false)
   const [titleError, setTitleError] = useState<string | undefined>()
 
   const onSave = () => {
@@ -94,9 +96,19 @@ function DocumentView({ doc }: { doc: DocumentDetail }) {
             Library
           </Group>
         </Anchor>
-        <Button variant="subtle" color="oxide" size="xs" onClick={() => setConfirmDelete(true)}>
-          Delete
-        </Button>
+        <Group gap="xs" wrap="nowrap">
+          <Button
+            variant="default"
+            size="xs"
+            leftSection={<IconShare size={14} stroke={1.6} />}
+            onClick={() => setSharing(true)}
+          >
+            Share
+          </Button>
+          <Button variant="subtle" color="oxide" size="xs" onClick={() => setConfirmDelete(true)}>
+            Delete
+          </Button>
+        </Group>
       </Group>
 
       <div className="ax-detail-grid">
@@ -239,6 +251,8 @@ function DocumentView({ doc }: { doc: DocumentDetail }) {
           </Box>
         </Stack>
       </div>
+
+      <ShareDialog opened={sharing} onClose={() => setSharing(false)} docId={doc.id} title={doc.title} />
 
       <Modal opened={confirmDelete} onClose={() => setConfirmDelete(false)} title={`Delete No. ${doc.id}?`} centered>
         <Stack>

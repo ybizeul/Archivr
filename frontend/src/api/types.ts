@@ -44,6 +44,24 @@ export interface DocumentDetail extends Document {
   text: string
 }
 
+/** A signed share link, as returned when one is created. */
+export interface ShareLink {
+  url: string
+  token: string
+  expires_at: string
+}
+
+/** What a share link shows about the document. Nothing else is exposed. */
+export interface SharedDocument {
+  title: string
+  document_date: string | null
+  filename: string
+  mime: string
+  size: number
+  rotation: 0 | 90 | 180 | 270
+  expires_at: string
+}
+
 export interface Page<T> {
   items: T[]
   total: number

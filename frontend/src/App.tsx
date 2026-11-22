@@ -7,6 +7,7 @@ import { AdminPage } from './pages/AdminPage'
 import { DocumentPage } from './pages/DocumentPage'
 import { LibraryPage } from './pages/LibraryPage'
 import { LoginPage } from './pages/LoginPage'
+import { SharePage } from './pages/SharePage'
 import { TriagePage } from './pages/TriagePage'
 
 function RequireAuth({ children }: { children: ReactNode }) {
@@ -30,6 +31,8 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      {/* Public: the signed token in the address is the credential, so no sign-in is asked for. */}
+      <Route path="/share/:token" element={<SharePage />} />
       <Route
         element={
           <RequireAuth>

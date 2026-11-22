@@ -641,6 +641,11 @@ html[data-mantine-color-scheme='dark'] .mantine-Button-root[data-variant='filled
   min-height: 480px;
 }
 
+.ax-share-sheet {
+  height: calc(100vh - 150px);
+  min-height: 480px;
+}
+
 .ax-facts {
   display: grid;
   grid-template-columns: 130px minmax(0, 1fr);

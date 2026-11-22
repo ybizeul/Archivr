@@ -21,7 +21,8 @@ Codes in use:
 | 400 | `INVALID`, `INVALID_JSON`, `INVALID_ID`, `INVALID_SETTINGS`, `INVALID_MAPPING` | Bad input. `INVALID` also covers "cannot delete your own account" and "last admin". |
 | 401 | `UNAUTHORIZED`, `INVALID_CREDENTIALS` | No session, or wrong email or password. Both sign-in failures use the same message. |
 | 403 | `FORBIDDEN`, `LOCAL_LOGIN_DISABLED` | Admin route for a user, or local sign-in turned off. |
-| 404 | `NOT_FOUND`, `FILE_MISSING`, `THUMBNAIL_UNAVAILABLE` | Unknown ID or path. The file is missing on disk, or the type has no preview. |
+| 404 | `NOT_FOUND`, `FILE_MISSING`, `THUMBNAIL_UNAVAILABLE`, `SHARE_INVALID` | Unknown ID or path. The file is missing on disk, or the type has no preview. The share link is not valid. |
+| 410 | `SHARE_EXPIRED` | The share link is past its expiry. |
 | 409 | `DUPLICATE`, `CONFLICT`, `FILE_EXISTS`, `IN_USE`, `IMPORT_RUNNING` | Same bytes already filed; name already taken; a file with that name is already on disk; the item is still in use; or a Paperless import is already running. |
 | 413 | `TOO_LARGE` | Upload over 100 MB. |
 | 415 | `UNSUPPORTED_TYPE` | Upload is not a supported type. |
@@ -62,6 +63,20 @@ Unknown paths under `/api/` return a JSON `404 NOT_FOUND`.
 | `GET /documents/{id}/thumbnail` | JPEG preview, up to 480 px. |
 | `GET /documents/{id}/suggestions` | `{ "dates": [{ "value", "label", "source" }], "titles": [] }`, found in the OCR text. Nothing is saved until a user applies one. |
 | `POST /documents/{id}/reocr` | Queues OCR again. `202` with the document. |
+
+## Share links
+
+A share link opens one document for anyone who has it, without sign-in. It is a signed JWT (HS256) in the address. The token holds the document number and its own expiry, so nothing is stored on the server.
+
+| Method and path | Notes |
+| --- | --- |
+| `POST /documents/{id}/share` | Needs a session. Body `{ "expires_in_seconds" }`, from 60 (1 minute) to 31536000 (365 days). `201` with `{ "url", "token", "expires_at" }`. `400 INVALID` for a value outside the range, `404` for an unknown document. |
+| `GET /shares/{token}` | **No sign-in.** `{ "title", "document_date", "filename", "mime", "size", "rotation", "expires_at" }`. Folder, tags, correspondent and OCR text are not included. `410 SHARE_EXPIRED` after the expiry. `404 SHARE_INVALID` for a token that is not genuine, or whose document was deleted. |
+| `GET /shares/{token}/file` | **No sign-in.** The file, inline. Add `?download=1` to get it as an attachment. Same errors. |
+
+The link grants nothing else: the token is not a session, and the share and session signing keys differ. Both come from `JWT_SECRET`, so a link survives a restart exactly when sessions do, and changing `JWT_SECRET` ends every link. A link cannot be cancelled on its own. Deleting the document ends it. Share responses are sent with `Cache-Control: private, no-store` and `Referrer-Policy: no-referrer`.
+
+The web app shows a link at `/share/{token}`.
 
 ## Folders
 

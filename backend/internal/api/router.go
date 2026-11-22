@@ -27,6 +27,7 @@ const (
 type Deps struct {
 	Store      *store.Store
 	Sessions   *auth.Sessions
+	Shares     *auth.Shares // share-link signer. Derived from Sessions when nil
 	OIDC       *auth.OIDCService
 	Limiter    *auth.LoginLimiter
 	PublicURL  string // external base URL, e.g. https://archive.example.org. Derived from the request when empty
@@ -56,6 +57,9 @@ func NewRouter(d Deps) http.Handler {
 	if d.Log == nil {
 		d.Log = slog.Default()
 	}
+	if d.Shares == nil && d.Sessions != nil {
+		d.Shares = d.Sessions.Shares()
+	}
 	s := &server{Deps: d}
 
 	mux := http.NewServeMux()
@@ -82,6 +86,12 @@ func NewRouter(d Deps) http.Handler {
 	mux.HandleFunc("GET /api/v1/documents/{id}/thumbnail", s.authed(false, s.documentThumbnail))
 	mux.HandleFunc("GET /api/v1/documents/{id}/suggestions", s.authed(false, s.documentSuggestions))
 	mux.HandleFunc("POST /api/v1/documents/{id}/reocr", s.authed(false, s.reOCR))
+
+	// Share links. Creating one needs a session. Opening one needs no sign-in: the signed
+	// token in the path is the credential, and it grants read access to one document.
+	mux.HandleFunc("POST /api/v1/documents/{id}/share", s.authed(false, s.createShare))
+	mux.HandleFunc("GET /api/v1/shares/{token}", s.sharedInfo)
+	mux.HandleFunc("GET /api/v1/shares/{token}/file", s.sharedFile)
 
 	// Folders, types, correspondents and tags.
 	mux.HandleFunc("GET /api/v1/folders", s.authed(false, s.listFolders))

@@ -7,11 +7,16 @@ import { usePatchDocument } from '../api/queries'
 import { errorMessage } from '../lib/format'
 
 interface DocViewerProps {
-  id: number
+  /** The document to show. Not needed when `src` is given. */
+  id?: number
+  /** Where the file comes from. Defaults to the signed-in file route for `id`. */
+  src?: string
   mime: string
   title: string
   /** Degrees clockwise, as stored on the document. */
   rotation?: number
+  /** Turn the view only, without saving the rotation. Used where the viewer is not signed in. */
+  readOnly?: boolean
 }
 
 const normalise = (deg: number) => ((deg % 360) + 360) % 360
@@ -21,8 +26,8 @@ const normalise = (deg: number) => ((deg % 360) + 360) % 360
  * The rotate buttons turn the view and remember the turn on the document. The file itself
  * is never changed: rotation is only a hint for how the browser draws it.
  */
-export function DocViewer({ id, mime, title, rotation = 0 }: DocViewerProps) {
-  const src = `/api/v1/documents/${id}/file`
+export function DocViewer({ id, src: srcProp, mime, title, rotation = 0, readOnly = false }: DocViewerProps) {
+  const src = srcProp ?? `/api/v1/documents/${id}/file`
   const isPdf = mime === 'application/pdf'
   const [zoomed, setZoomed] = useState(false)
   const [turn, setTurn] = useState(normalise(rotation))
@@ -32,6 +37,7 @@ export function DocViewer({ id, mime, title, rotation = 0 }: DocViewerProps) {
     const previous = turn
     const next = normalise(previous + delta)
     setTurn(next)
+    if (readOnly || id === undefined) return
     patch.mutate(
       { id, patch: { rotation: next } },
       {
@@ -70,7 +76,7 @@ export function DocViewer({ id, mime, title, rotation = 0 }: DocViewerProps) {
         )}
       </Group>
       {isPdf ? (
-        <PdfStage id={id} src={src} title={title} turn={turn} />
+        <PdfStage src={src} title={id === undefined ? title : `Document ${id}: ${title}`} turn={turn} />
       ) : (
         <ImageStage src={src} title={title} turn={turn} zoomed={zoomed} onToggleZoom={() => setZoomed((z) => !z)} />
       )}
@@ -79,15 +85,14 @@ export function DocViewer({ id, mime, title, rotation = 0 }: DocViewerProps) {
 }
 
 /** A PDF turned with CSS. A quarter turn swaps the frame's width and height, so it still fills the stage. */
-function PdfStage({ id, src, title, turn }: { id: number; src: string; title: string; turn: number }) {
+function PdfStage({ src, title, turn }: { src: string; title: string; turn: number }) {
   const sideways = turn === 90 || turn === 270
   return (
     <div className="ax-viewer-stage">
       <iframe
-        key={id}
         className="ax-viewer-frame"
         src={`${src}#navpanes=0&view=FitH`}
-        title={`Document ${id}: ${title}`}
+        title={title}
         style={{
           width: sideways ? '100cqh' : '100cqw',
           height: sideways ? '100cqw' : '100cqh',
