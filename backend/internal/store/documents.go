@@ -46,6 +46,7 @@ type Document struct {
 	OCRError        string   `json:"ocr_error"`
 	Rotation        int      `json:"rotation"`    // degrees clockwise, display only
 	ValidUntil      *string  `json:"valid_until"` // last valid day, YYYY-MM-DD; the document is trashed after it
+	Favorite        bool     `json:"favorite"` // whether the signed-in user marked it; set by the API, not stored on the row
 	Snippet         string   `json:"snippet,omitempty"`
 }
 
@@ -87,6 +88,7 @@ type DocFilter struct {
 	Limit           int
 	Offset          int
 	ExcludeFolderID int64 // when set, documents in this folder are left out
+	FavoriteOf      int64 // when set, only documents this user has marked as favorite
 }
 
 const (
@@ -223,6 +225,10 @@ func (s *Store) ListDocuments(ctx context.Context, f DocFilter) ([]Document, int
 	if f.OCRStatus != "" {
 		where = append(where, `d.ocr_status = ?`)
 		args = append(args, f.OCRStatus)
+	}
+	if f.FavoriteOf != 0 {
+		where = append(where, `EXISTS (SELECT 1 FROM document_favorites fv WHERE fv.document_id = d.id AND fv.user_id = ?)`)
+		args = append(args, f.FavoriteOf)
 	}
 	clause := ""
 	if len(where) > 0 {

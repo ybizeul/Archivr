@@ -13,6 +13,7 @@ Documents arrive from a scanner folder, by email, or by upload. Each one gets a 
 - **Full-text search.** Search the text of every document, as well as titles, tags and correspondents. Accents and ligatures are ignored, words match from their start, and results show where the words were found. Press `Ctrl/⌘ K` anywhere to search.
 - **Text recognition.** Scans and photos are read with Tesseract, English and French by default, and PDFs with a text layer are used as they are. Languages and time limits are set in the Admin screen.
 - **Folders, types, tags.** Organise by folder, then narrow by type, tag, date range or recognition state. Switch between a list and a card view with page previews.
+- **Favorites.** Press the bookmark on a document's page and it joins your **Favorites**, a special folder at the top of the folder list. It lists your marked documents wherever they are filed. Each user has their own favorites.
 - **Previews you can fix.** Open any document in the browser and turn it if it was scanned sideways. The file itself is never changed.
 - **Expiry dates.** Give a document a "valid until" date, such as an insurance certificate. The day after, it moves to Trash.
 - **Trash.** Deleted documents go to Trash first. Restore them, or delete them for good from there.

@@ -36,7 +36,7 @@ func (s *server) inboxCount(w http.ResponseWriter, r *http.Request, _ store.User
 
 var ocrStatuses = map[string]bool{"pending": true, "done": true, "failed": true, "skipped": true}
 
-func (s *server) listDocuments(w http.ResponseWriter, r *http.Request, _ store.User) {
+func (s *server) listDocuments(w http.ResponseWriter, r *http.Request, user store.User) {
 	q := r.URL.Query()
 	f := store.DocFilter{
 		Query:     strings.TrimSpace(q.Get("q")),
@@ -53,6 +53,9 @@ func (s *server) listDocuments(w http.ResponseWriter, r *http.Request, _ store.U
 	}
 	if q.Get("inbox") == "1" {
 		f.FolderID = archive.InboxID
+	}
+	if q.Get("favorite") == "1" {
+		f.FavoriteOf = user.ID
 	}
 	// Trash is opened on purpose. The library and global search leave it out.
 	if f.FolderID == 0 {
@@ -79,6 +82,9 @@ func (s *server) listDocuments(w http.ResponseWriter, r *http.Request, _ store.U
 	}
 
 	docs, total, err := s.Store.ListDocuments(r.Context(), f)
+	if err == nil {
+		err = s.Store.FillFavorites(r.Context(), user.ID, docs)
+	}
 	if err != nil {
 		s.writeStoreError(w, err)
 		return
@@ -91,7 +97,7 @@ func (s *server) listDocuments(w http.ResponseWriter, r *http.Request, _ store.U
 	})
 }
 
-func (s *server) getDocument(w http.ResponseWriter, r *http.Request, _ store.User) {
+func (s *server) getDocument(w http.ResponseWriter, r *http.Request, user store.User) {
 	id, ok := pathID(w, r)
 	if !ok {
 		return
@@ -106,10 +112,14 @@ func (s *server) getDocument(w http.ResponseWriter, r *http.Request, _ store.Use
 		s.writeStoreError(w, err)
 		return
 	}
+	if err := s.markFavorite(r, user, &doc); err != nil {
+		s.writeStoreError(w, err)
+		return
+	}
 	writeJSON(w, http.StatusOK, documentDetail{Document: doc, Text: text})
 }
 
-func (s *server) patchDocument(w http.ResponseWriter, r *http.Request, _ store.User) {
+func (s *server) patchDocument(w http.ResponseWriter, r *http.Request, user store.User) {
 	id, ok := pathID(w, r)
 	if !ok {
 		return
@@ -119,11 +129,45 @@ func (s *server) patchDocument(w http.ResponseWriter, r *http.Request, _ store.U
 		return
 	}
 	doc, err := s.Archive.Update(r.Context(), id, p)
+	if err == nil {
+		err = s.markFavorite(r, user, &doc)
+	}
 	if err != nil {
 		s.writeStoreError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, doc)
+}
+
+// markFavorite sets doc.Favorite for the signed-in user.
+func (s *server) markFavorite(r *http.Request, user store.User, doc *store.Document) error {
+	docs := []store.Document{*doc}
+	if err := s.Store.FillFavorites(r.Context(), user.ID, docs); err != nil {
+		return err
+	}
+	doc.Favorite = docs[0].Favorite
+	return nil
+}
+
+// addFavorite and removeFavorite change the signed-in user's own list. Both are idempotent.
+func (s *server) addFavorite(w http.ResponseWriter, r *http.Request, user store.User) {
+	s.setFavorite(w, r, user, true)
+}
+
+func (s *server) removeFavorite(w http.ResponseWriter, r *http.Request, user store.User) {
+	s.setFavorite(w, r, user, false)
+}
+
+func (s *server) setFavorite(w http.ResponseWriter, r *http.Request, user store.User, favorite bool) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	if err := s.Store.SetFavorite(r.Context(), user.ID, id, favorite); err != nil {
+		s.writeStoreError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *server) deleteDocument(w http.ResponseWriter, r *http.Request, _ store.User) {
@@ -217,7 +261,7 @@ func (s *server) uploadDocument(w http.ResponseWriter, r *http.Request, _ store.
 
 // replaceDocumentFile swaps the stored file for a new upload (multipart field: file). The document keeps
 // its number, title, folder and tags; the text is read again.
-func (s *server) replaceDocumentFile(w http.ResponseWriter, r *http.Request, _ store.User) {
+func (s *server) replaceDocumentFile(w http.ResponseWriter, r *http.Request, user store.User) {
 	id, ok := pathID(w, r)
 	if !ok {
 		return
@@ -249,6 +293,9 @@ func (s *server) replaceDocumentFile(w http.ResponseWriter, r *http.Request, _ s
 		return
 	}
 	doc, err := s.Archive.ReplaceFile(r.Context(), id, data, mimeType)
+	if err == nil {
+		err = s.markFavorite(r, user, &doc)
+	}
 	if err != nil {
 		s.writeStoreError(w, err)
 		return
@@ -339,7 +386,7 @@ func (s *server) documentSuggestions(w http.ResponseWriter, r *http.Request, _ s
 	writeJSON(w, http.StatusOK, suggest.Analyse(text))
 }
 
-func (s *server) reOCR(w http.ResponseWriter, r *http.Request, _ store.User) {
+func (s *server) reOCR(w http.ResponseWriter, r *http.Request, user store.User) {
 	id, ok := pathID(w, r)
 	if !ok {
 		return
@@ -353,6 +400,9 @@ func (s *server) reOCR(w http.ResponseWriter, r *http.Request, _ store.User) {
 		return
 	}
 	doc, err := s.Store.GetDocument(r.Context(), id)
+	if err == nil {
+		err = s.markFavorite(r, user, &doc)
+	}
 	if err != nil {
 		s.writeStoreError(w, err)
 		return

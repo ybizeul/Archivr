@@ -5,16 +5,18 @@ import { FolderTree } from './FolderTree'
 interface LibraryBrowserProps {
   folder?: number
   tag?: string
+  favorites?: boolean
+  onFavorites: () => void
   onFolder: (id: number | undefined) => void
   onTag: (tag: string | undefined) => void
 }
 
-/** The folder tree and tag list beside the library, also shown beside an open document. */
-export function LibraryBrowser({ folder, tag = '', onFolder, onTag }: LibraryBrowserProps) {
+/** The folder tree (Favorites on top) and tag list beside the library, also shown beside an open document. */
+export function LibraryBrowser({ folder, tag = '', favorites = false, onFavorites, onFolder, onTag }: LibraryBrowserProps) {
   const tags = useTags()
   return (
     <>
-      <FolderTree selected={folder} onSelect={onFolder} />
+      <FolderTree selected={folder} onSelect={onFolder} favoritesSelected={favorites} onSelectFavorites={onFavorites} />
 
       <Stack gap={6} mt="lg">
         <Text className="ax-mono ax-accent" size="xs" tt="uppercase">

@@ -1,14 +1,17 @@
 import { useMemo, useState } from 'react'
 import { ActionIcon, Box, Button, Group, Menu, Modal, Select, Stack, Text, TextInput, UnstyledButton } from '@mantine/core'
 import { notifications } from '@mantine/notifications'
-import { IconDots, IconFolder, IconFolderOpen, IconPlus, IconTrash } from '@tabler/icons-react'
-import { useFolderMutations, useFolders } from '../api/queries'
+import { IconBookmark, IconBookmarkFilled, IconDots, IconFolder, IconFolderOpen, IconPlus, IconTrash } from '@tabler/icons-react'
+import { useFavoriteCount, useFolderMutations, useFolders } from '../api/queries'
 import type { Folder } from '../api/types'
 import { errorMessage, folderLabel, folderName, isTrash } from '../lib/format'
 
 interface FolderTreeProps {
   selected?: number
   onSelect: (id: number | undefined) => void
+  /** Favorites is a virtual folder: the documents the user marked, wherever they are filed. */
+  favoritesSelected?: boolean
+  onSelectFavorites: () => void
 }
 
 interface Node {
@@ -31,8 +34,10 @@ function buildTree(folders: Folder[]): Node[] {
 }
 
 /** The folder tree in the library. INBOX and Trash are system folders: they are shown but cannot be changed. Trash sits at the bottom, apart from the folders you file into. */
-export function FolderTree({ selected, onSelect }: FolderTreeProps) {
+export function FolderTree({ selected, onSelect, favoritesSelected = false, onSelectFavorites }: FolderTreeProps) {
   const folders = useFolders()
+  const favoriteCount = useFavoriteCount()
+  const allSelected = selected === undefined && !favoritesSelected
   const all = folders.data ?? []
   const trash = all.find(isTrash)
   const tree = useMemo(() => buildTree((folders.data ?? []).filter((f) => !isTrash(f))), [folders.data])
@@ -43,7 +48,7 @@ export function FolderTree({ selected, onSelect }: FolderTreeProps) {
 
   const renderNode = (node: Node, depth: number) => {
     const f = node.folder
-    const active = selected === f.id
+    const active = selected === f.id && !favoritesSelected
     return (
       <Box key={f.id}>
         <Group gap={2} wrap="nowrap" className={`ax-tree-row${active ? ' active' : ''}`} style={{ paddingLeft: depth * 14 }}>
@@ -95,10 +100,32 @@ export function FolderTree({ selected, onSelect }: FolderTreeProps) {
         </ActionIcon>
       </Group>
 
+      <Box className={`ax-tree-row ax-tree-favorites${favoritesSelected ? ' active' : ''}`}>
+        <UnstyledButton
+          className="ax-tree-link"
+          onClick={onSelectFavorites}
+          aria-current={favoritesSelected ? 'true' : undefined}
+        >
+          {favoritesSelected ? (
+            <IconBookmarkFilled size={16} className="ax-favorite-icon" />
+          ) : (
+            <IconBookmark size={16} stroke={1.8} className="ax-favorite-icon" />
+          )}
+          <Text component="span" size="sm" truncate className="ax-tree-name">
+            Favorites
+          </Text>
+          {favoriteCount !== undefined && (
+            <Text component="span" size="xs" c="dimmed" className="ax-mono">
+              {favoriteCount}
+            </Text>
+          )}
+        </UnstyledButton>
+      </Box>
+
       <UnstyledButton
-        className={`ax-tree-link ax-tree-all${selected === undefined ? ' active' : ''}`}
+        className={`ax-tree-link ax-tree-all${allSelected ? ' active' : ''}`}
         onClick={() => onSelect(undefined)}
-        aria-current={selected === undefined ? 'true' : undefined}
+        aria-current={allSelected ? 'true' : undefined}
       >
         <Text component="span" size="sm" fw={500}>
           All documents

@@ -55,6 +55,10 @@ The correspondent value list. `name` is unique and case-insensitive, and names a
 
 Tags are unique and case-insensitive. Links are cascade-deleted with the document or tag.
 
+### `document_favorites`
+
+One row per user and document that the user marked as favorite, so every user has their own list. Rows are cascade-deleted with the user or the document.
+
 ### `document_content`
 
 One row per document, written by the OCR worker.

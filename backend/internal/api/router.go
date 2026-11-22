@@ -107,6 +107,8 @@ func NewRouter(d Deps) http.Handler {
 	mux.HandleFunc("GET /api/v1/documents/{id}", s.authed(false, s.getDocument))
 	mux.HandleFunc("PATCH /api/v1/documents/{id}", s.authed(false, s.patchDocument))
 	mux.HandleFunc("DELETE /api/v1/documents/{id}", s.authed(false, s.deleteDocument))
+	mux.HandleFunc("PUT /api/v1/documents/{id}/favorite", s.authed(false, s.addFavorite))
+	mux.HandleFunc("DELETE /api/v1/documents/{id}/favorite", s.authed(false, s.removeFavorite))
 	mux.HandleFunc("POST /api/v1/trash/empty", s.authed(true, s.emptyTrash))
 	mux.HandleFunc("GET /api/v1/documents/{id}/file", s.authed(false, s.documentFile))
 	mux.HandleFunc("PUT /api/v1/documents/{id}/file", s.authed(false, s.replaceDocumentFile))

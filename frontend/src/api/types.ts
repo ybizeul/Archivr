@@ -39,6 +39,8 @@ export interface Document {
   rotation: 0 | 90 | 180 | 270
   /** Last valid day, YYYY-MM-DD. The document moves to Trash after it. Null when it does not expire. */
   valid_until: string | null
+  /** Whether the signed-in user marked this document as a favorite. Each user has their own list. */
+  favorite: boolean
   snippet?: string
 }
 

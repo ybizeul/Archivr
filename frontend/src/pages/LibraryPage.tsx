@@ -52,6 +52,7 @@ export function LibraryPage() {
   // The chosen layout is a personal preference, so it is remembered in this browser rather than the URL.
   const [view, setView] = useLocalStorage<LibraryView>({ key: 'archivr-library-view', defaultValue: 'grid' })
 
+  const favorites = params.get('favorites') === '1'
   const folder = Number(params.get('folder')) || undefined
   const q = params.get('q') ?? ''
   const type = Number(params.get('type')) || undefined
@@ -91,6 +92,7 @@ export function LibraryPage() {
 
   const docs = useDocuments({
     q: q || undefined,
+    favorite: favorites || undefined,
     folder,
     subtree: folder !== undefined && subtree,
     type,
@@ -115,7 +117,7 @@ export function LibraryPage() {
   // Emptying Trash is permanent, so only admins are offered it.
   const canEmptyTrash = user?.role === 'admin' && currentFolder !== undefined && isTrash(currentFolder)
   const trashCount = canEmptyTrash ? currentFolder.document_count : 0
-  const title = q ? `Results for “${q}”` : currentFolder ? (folderTitle(currentFolder)) : 'All documents'
+  const title = q ? `Results for “${q}”` : favorites ? 'Favorites' : currentFolder ? (folderTitle(currentFolder)) : 'All documents'
   const activeFilters = [type, from, to, ocr, sort].filter(Boolean).length
   const pages = Math.max(1, Math.ceil((docs.data?.total ?? 0) / PAGE_SIZE))
 
@@ -133,7 +135,7 @@ export function LibraryPage() {
             aria-expanded={browseOpen}
             className="ax-collapse-toggle"
           >
-            Folders: {currentFolder ? (folderTitle(currentFolder)) : 'all'}
+            Folders: {favorites ? 'Favorites' : currentFolder ? (folderTitle(currentFolder)) : 'all'}
             {tag ? ` · #${tag}` : ''}
           </Button>
         )}
@@ -142,8 +144,13 @@ export function LibraryPage() {
             <LibraryBrowser
               folder={folder}
               tag={tag}
+              favorites={favorites}
+              onFavorites={() => {
+                update({ favorites: '1', folder: undefined, page: undefined })
+                setBrowseOpen(false)
+              }}
               onFolder={(id) => {
-                update({ folder: id ? String(id) : undefined, page: undefined })
+                update({ folder: id ? String(id) : undefined, favorites: undefined, page: undefined })
                 setBrowseOpen(false)
               }}
               onTag={(t) => update({ tag: t })}
@@ -277,7 +284,14 @@ export function LibraryPage() {
               </Box>
             ) : docs.data?.items.length === 0 ? (
               <Box p="xl">
-                {currentFolder && isTrash(currentFolder) && !q && !type && !tag && !from && !to && !ocr ? (
+                {favorites && !q && !type && !tag && !from && !to && !ocr ? (
+                  <>
+                    <Text fw={600}>No favorites yet.</Text>
+                    <Text c="dimmed" size="sm">
+                      Open a document and press the bookmark to keep it here.
+                    </Text>
+                  </>
+                ) : currentFolder && isTrash(currentFolder) && !q && !type && !tag && !from && !to && !ocr ? (
                   <>
                     <Text fw={600}>Trash is empty.</Text>
                     <Text c="dimmed" size="sm">

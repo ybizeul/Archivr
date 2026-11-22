@@ -36,6 +36,7 @@ export interface DocFilters {
   ocr?: string
   sort?: string
   inbox?: boolean
+  favorite?: boolean
   limit?: number
   offset?: number
 }
@@ -88,6 +89,7 @@ export function useDocuments(f: DocFilters, options?: { enabled?: boolean }) {
     ocr: f.ocr,
     sort: f.sort,
     inbox: f.inbox,
+    favorite: f.favorite,
     limit: f.limit ?? 50,
     offset: f.offset ?? 0,
   })
@@ -207,6 +209,21 @@ export function useInvalidateDocuments() {
       qc.invalidateQueries({ queryKey: ['tags'] }),
       qc.invalidateQueries({ queryKey: ['suggestions'] }),
     ])
+}
+
+/** How many documents the signed-in user has marked as favorites. */
+export function useFavoriteCount() {
+  return useDocuments({ favorite: true, limit: 1 }).data?.total
+}
+
+/** Marks a document as a favorite of the signed-in user, or takes the mark away. */
+export function useSetFavorite() {
+  const invalidate = useInvalidateDocuments()
+  return useMutation({
+    mutationFn: ({ id, favorite }: { id: number; favorite: boolean }) =>
+      favorite ? api.put<void>(`/documents/${id}/favorite`) : api.del<void>(`/documents/${id}/favorite`),
+    onSuccess: () => invalidate(),
+  })
 }
 
 export function usePatchDocument() {

@@ -664,6 +664,17 @@ html[data-mantine-color-scheme='dark'] .mantine-Button-root[data-variant='filled
   background: var(--ax-selected);
 }
 
+/* Favorites is a virtual folder pinned above the real ones. */
+.ax-tree-favorites {
+  display: flex;
+  align-items: center;
+}
+
+.ax-favorite-icon {
+  color: var(--mantine-color-yellow-6);
+  flex: none;
+}
+
 /* Trash is a bin, not a folder you file into: oxide can, pinned under the tree. */
 .ax-tree-trash {
   margin-top: 8px;

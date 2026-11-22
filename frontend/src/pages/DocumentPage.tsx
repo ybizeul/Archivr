@@ -3,8 +3,8 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Alert, Anchor, Autocomplete, Badge, Box, Button, CopyButton, Group, Loader, ScrollArea, Select, Stack, Text, TextInput, Title, ActionIcon, Tooltip } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
 import { notifications } from '@mantine/notifications'
-import { IconArrowLeft, IconChevronLeft, IconChevronRight, IconCopy, IconCheck, IconShare } from '@tabler/icons-react'
-import { useCorrespondents, useDocument, useDocuments, useFolders, usePatchDocument, useReOCR, useTags, useTypes } from '../api/queries'
+import { IconArrowLeft, IconChevronLeft, IconChevronRight, IconCopy, IconCheck, IconShare, IconBookmark, IconBookmarkFilled } from '@tabler/icons-react'
+import { useCorrespondents, useDocument, useDocuments, useFolders, usePatchDocument, useReOCR, useSetFavorite, useTags, useTypes } from '../api/queries'
 import type { DocumentDetail } from '../api/types'
 import { DateField } from '../components/DateField'
 import { DeleteDocumentDialog } from '../components/DeleteDocumentDialog'
@@ -31,6 +31,7 @@ export function DocumentPage() {
   const remembered = new URLSearchParams(libraryLocation.split('?')[1] ?? '')
   const folder = Number(remembered.get('folder')) || undefined
   const tag = remembered.get('tag') ?? ''
+  const favorites = remembered.get('favorites') === '1'
 
   let content
   if (doc.isPending) {
@@ -55,8 +56,9 @@ export function DocumentPage() {
 
   if (isMobile) return content
 
-  const goLibrary = (changes: { folder?: number; tag?: string }) => {
+  const goLibrary = (changes: { folder?: number; tag?: string; favorites?: boolean }) => {
     const next = new URLSearchParams()
+    if (changes.favorites) next.set('favorites', '1')
     if (changes.folder) next.set('folder', String(changes.folder))
     if (changes.tag) next.set('tag', changes.tag)
     const search = next.toString()
@@ -69,8 +71,10 @@ export function DocumentPage() {
         <LibraryBrowser
           folder={folder}
           tag={tag}
+          favorites={favorites}
+          onFavorites={() => goLibrary({ favorites: true })}
           onFolder={(f) => goLibrary({ folder: f })}
-          onTag={(t) => goLibrary({ folder, tag: t })}
+          onTag={(t) => goLibrary({ folder, tag: t, favorites })}
         />
       </Box>
       <Box className="ax-library-main">{content}</Box>
@@ -92,6 +96,7 @@ function useNeighbours(doc: DocumentDetail, libraryLocation: string) {
 
   const remembered = useDocuments({
     q: q || undefined,
+    favorite: params.get('favorites') === '1' || undefined,
     folder,
     subtree: folder !== undefined && params.get('subtree') !== '0',
     type: Number(params.get('type')) || undefined,
@@ -127,6 +132,7 @@ function DocumentView({ doc, libraryLocation }: { doc: DocumentDetail; libraryLo
   const tags = useTags()
   const save = usePatchDocument()
   const reocr = useReOCR()
+  const setFavorite = useSetFavorite()
 
   const [title, setTitle] = useState(doc.title)
   const [date, setDate] = useState(doc.document_date ?? '')
@@ -213,6 +219,27 @@ function DocumentView({ doc, libraryLocation }: { doc: DocumentDetail; libraryLo
           </Group>
         </Group>
         <Group gap="xs" wrap="nowrap">
+          <Tooltip label={doc.favorite ? 'Remove from favorites' : 'Add to favorites'}>
+            <ActionIcon
+              variant={doc.favorite ? 'light' : 'default'}
+              color={doc.favorite ? 'yellow' : 'gray'}
+              size="lg"
+              aria-label={doc.favorite ? 'Remove from favorites' : 'Add to favorites'}
+              aria-pressed={doc.favorite}
+              loading={setFavorite.isPending}
+              onClick={() =>
+                setFavorite.mutate(
+                  { id: doc.id, favorite: !doc.favorite },
+                  {
+                    onError: (err) =>
+                      notifications.show({ color: 'red', title: "Couldn't update favorites", message: errorMessage(err) }),
+                  },
+                )
+              }
+            >
+              {doc.favorite ? <IconBookmarkFilled size={16} /> : <IconBookmark size={16} stroke={1.6} />}
+            </ActionIcon>
+          </Tooltip>
           <Button
             variant="default"
             size="xs"

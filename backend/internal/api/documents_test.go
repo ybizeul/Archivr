@@ -765,3 +765,84 @@ func TestDocumentRoutesNeedSignIn(t *testing.T) {
 		}
 	}
 }
+
+func TestFavoritesArePerUser(t *testing.T) {
+	f := newFixture(t)
+	reader := readerCookie(t, f)
+	admin := adminCookie(t, f)
+
+	var doc struct {
+		ID int64 `json:"id"`
+	}
+	rec := f.upload(reader, "Lease.pdf", pdfData("lease"), "")
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("upload status = %d body %s", rec.Code, rec.Body.String())
+	}
+	decodeInto(t, rec, &doc)
+	path := fmt.Sprintf("/api/v1/documents/%d/favorite", doc.ID)
+
+	type page struct {
+		Items []struct {
+			ID       int64 `json:"id"`
+			Favorite bool  `json:"favorite"`
+		} `json:"items"`
+	}
+	favorites := func(c *http.Cookie) page {
+		t.Helper()
+		rec := f.do(http.MethodGet, "/api/v1/documents?favorite=1", nil, c)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("list status = %d body %s", rec.Code, rec.Body.String())
+		}
+		var p page
+		decodeInto(t, rec, &p)
+		return p
+	}
+
+	if got := favorites(reader); len(got.Items) != 0 {
+		t.Fatalf("favorites before marking = %d, want 0", len(got.Items))
+	}
+
+	// Marking twice is fine.
+	for range 2 {
+		if rec := f.do(http.MethodPut, path, nil, reader); rec.Code != http.StatusNoContent {
+			t.Fatalf("PUT favorite status = %d body %s", rec.Code, rec.Body.String())
+		}
+	}
+	got := favorites(reader)
+	if len(got.Items) != 1 || got.Items[0].ID != doc.ID || !got.Items[0].Favorite {
+		t.Fatalf("reader favorites = %+v", got.Items)
+	}
+
+	// The flag is personal: another user sees an unmarked document and an empty list.
+	if got := favorites(admin); len(got.Items) != 0 {
+		t.Fatalf("admin favorites = %+v, want none", got.Items)
+	}
+	var detail struct {
+		Favorite bool `json:"favorite"`
+	}
+	decodeInto(t, f.do(http.MethodGet, fmt.Sprintf("/api/v1/documents/%d", doc.ID), nil, admin), &detail)
+	if detail.Favorite {
+		t.Fatal("admin sees the reader's favorite")
+	}
+	decodeInto(t, f.do(http.MethodGet, fmt.Sprintf("/api/v1/documents/%d", doc.ID), nil, reader), &detail)
+	if !detail.Favorite {
+		t.Fatal("reader does not see their own favorite on the document")
+	}
+
+	// Editing the document keeps the flag in the response.
+	decodeInto(t, f.do(http.MethodPatch, fmt.Sprintf("/api/v1/documents/%d", doc.ID), map[string]any{"title": "Lease 2026"}, reader), &detail)
+	if !detail.Favorite {
+		t.Fatal("PATCH response lost the favorite flag")
+	}
+
+	if rec := f.do(http.MethodDelete, path, nil, reader); rec.Code != http.StatusNoContent {
+		t.Fatalf("DELETE favorite status = %d", rec.Code)
+	}
+	if got := favorites(reader); len(got.Items) != 0 {
+		t.Fatalf("favorites after removing = %+v", got.Items)
+	}
+
+	if rec := f.do(http.MethodPut, "/api/v1/documents/999999/favorite", nil, reader); rec.Code != http.StatusNotFound {
+		t.Fatalf("unknown document status = %d, want 404", rec.Code)
+	}
+}
