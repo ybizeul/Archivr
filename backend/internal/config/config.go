@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -21,6 +22,7 @@ type Config struct {
 	InitAdminEmail string // INIT_ADMIN_EMAIL, bootstrap admin email, default admin@archivr.local
 	OIDCLogoutURL  string // OIDC_LOGOUT_URL, provider logout endpoint. Overrides end_session_endpoint from discovery. Optional
 	TrustProxy     bool   // TRUST_PROXY, use X-Forwarded-For for the client IP. Enable only behind your proxy
+	ProxyHops      int    // from TRUST_PROXY: how many proxies append to X-Forwarded-For. A number sets it, any other value means 1
 	Debug          bool   // DEBUG, verbose logging
 }
 
@@ -35,8 +37,16 @@ func Load() (Config, error) {
 		InitPassword:   os.Getenv("INIT_PASSWORD"),
 		InitAdminEmail: strings.ToLower(strings.TrimSpace(envOr("INIT_ADMIN_EMAIL", "admin@archivr.local"))),
 		OIDCLogoutURL:  strings.TrimSpace(os.Getenv("OIDC_LOGOUT_URL")),
-		TrustProxy:     os.Getenv("TRUST_PROXY") != "",
 		Debug:          os.Getenv("DEBUG") != "",
+	}
+	if v := strings.TrimSpace(os.Getenv("TRUST_PROXY")); v != "" {
+		c.TrustProxy, c.ProxyHops = true, 1
+		if n, err := strconv.Atoi(v); err == nil {
+			if n < 1 {
+				return Config{}, fmt.Errorf("TRUST_PROXY must be the number of proxies in front of Archivr, 1 or more. Leave it unset to trust none")
+			}
+			c.ProxyHops = n
+		}
 	}
 	abs, err := filepath.Abs(c.DataDir)
 	if err != nil {

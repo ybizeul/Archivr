@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"io"
+	"mime"
 	"net/http"
 )
 
@@ -30,6 +31,13 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 }
 
 func readJSON(w http.ResponseWriter, r *http.Request, v any) error {
+	if r.ContentLength == 0 {
+		return errEmptyBody
+	}
+	// A browser sends a text/plain body across origins without asking first, so only JSON is read.
+	if mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type")); err != nil || mt != "application/json" {
+		return errNotJSON
+	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
 	dec := json.NewDecoder(r.Body)
 	if err := dec.Decode(v); err != nil {
@@ -41,7 +49,10 @@ func readJSON(w http.ResponseWriter, r *http.Request, v any) error {
 	return nil
 }
 
-var errEmptyBody = jsonError("request body is empty")
+var (
+	errEmptyBody = jsonError("request body is empty")
+	errNotJSON   = jsonError("send the body as JSON, with Content-Type: application/json")
+)
 
 type jsonError string
 

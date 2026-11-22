@@ -5,7 +5,9 @@ import (
 	"time"
 )
 
-// LoginLimiter blocks an email+client pair after too many failed sign-ins.
+// LoginLimiter blocks a key, such as an email and client address, after too many sign-in
+// attempts. An attempt counts as soon as it starts, and a success clears the key, so
+// requests sent at the same time cannot get past the limit.
 // It is in memory: a restart clears the blocks, which is acceptable for a
 // self-hosted, single-instance deployment.
 type LoginLimiter struct {
@@ -30,30 +32,26 @@ func NewLoginLimiter(window, blockFor time.Duration, maxAttempts int) *LoginLimi
 	}
 }
 
-// Allowed reports whether key may attempt a sign-in now.
-func (l *LoginLimiter) Allowed(key string, now time.Time) bool {
+// Attempt records a sign-in attempt for key and reports whether it may go ahead.
+// The attempt that reaches maxAttempts in the window is allowed, and blocks key after it.
+func (l *LoginLimiter) Attempt(key string, now time.Time) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.sweep(now)
 	st := l.state[key]
-	return !now.Before(st.blockedUntil)
-}
-
-// Failure records a failed sign-in and blocks key once it reaches maxAttempts in the window.
-func (l *LoginLimiter) Failure(key string, now time.Time) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.sweep(now)
-	st := l.state[key]
+	if now.Before(st.blockedUntil) {
+		return false
+	}
 	st.attempts = append(l.recent(st.attempts, now), now)
 	if len(st.attempts) >= l.maxAttempts {
 		st.blockedUntil = now.Add(l.blockFor)
 		st.attempts = nil
 	}
 	l.state[key] = st
+	return true
 }
 
-// Success clears the failure history for key.
+// Success clears the history for key.
 func (l *LoginLimiter) Success(key string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()

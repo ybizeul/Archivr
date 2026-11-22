@@ -39,7 +39,8 @@ type fixture struct {
 	skew     time.Duration // added to the server clock, so tests can move time forward
 }
 
-func newFixture(t *testing.T) *fixture {
+// newFixture builds the router over a fresh database. opts adjust the dependencies first.
+func newFixture(t *testing.T, opts ...func(*Deps)) *fixture {
 	t.Helper()
 	ctx := context.Background()
 	conn, err := db.Open(ctx, filepath.Join(t.TempDir(), "test.db"))
@@ -77,12 +78,11 @@ func newFixture(t *testing.T) *fixture {
 	importer := &ingest.Importer{Archive: arch, Store: st}
 
 	f := &fixture{t: t, store: st, sessions: sessions}
-	h := NewRouter(Deps{
+	deps := Deps{
 		Store:     st,
 		Sessions:  sessions,
 		Now:       func() time.Time { return time.Now().Add(f.skew) },
 		OIDC:      auth.NewOIDCService(),
-		Limiter:   auth.NewLoginLimiter(15*time.Minute, 15*time.Minute, 8),
 		PublicURL: "https://archive.test",
 		Archive:   arch,
 		Ingest:    importer,
@@ -91,8 +91,11 @@ func newFixture(t *testing.T) *fixture {
 		Previews:  &preview.Cache{Dir: filepath.Join(dataDir, "cache", "thumbs")},
 		WatchDir:  filepath.Join(dataDir, "ingest"),
 		Log:       quiet,
-	})
-	f.h = h
+	}
+	for _, opt := range opts {
+		opt(&deps)
+	}
+	f.h = NewRouter(deps)
 	return f
 }
 

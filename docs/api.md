@@ -1,12 +1,14 @@
 # API
 
-All routes are under `/api/v1`, except `GET /healthz`. Bodies are JSON, except uploads (multipart). Times are UTC RFC 3339 strings. Dates are `YYYY-MM-DD`.
+All routes are under `/api/v1`, except `GET /healthz`. Bodies are JSON, sent with `Content-Type: application/json`, except uploads (multipart). Times are UTC RFC 3339 strings. Dates are `YYYY-MM-DD`.
 
 ## Conventions
 
 **Authentication.** Sign-in sets the HttpOnly cookie `archivr_session`. API clients can instead send `Authorization: Bearer <token>`, where the token comes from the login response.
 
 **Roles.** Routes marked *admin* return `403 FORBIDDEN` to a user with the `user` role.
+
+**Cross-origin requests.** A request with any method other than `GET`, `HEAD` or `OPTIONS` returns `403 CROSS_ORIGIN` when the browser marks it as coming from another site, with `Sec-Fetch-Site` or with an `Origin` that does not match the host. Clients outside a browser send neither header and are not affected.
 
 **Errors.** Every error has one shape:
 
@@ -20,14 +22,15 @@ Codes in use:
 | --- | --- | --- |
 | 400 | `INVALID`, `INVALID_JSON`, `INVALID_ID`, `INVALID_SETTINGS`, `INVALID_MAPPING` | Bad input. `INVALID` also covers "cannot delete your own account" and "last admin". |
 | 401 | `UNAUTHORIZED`, `INVALID_CREDENTIALS` | No session, or wrong email or password. Both sign-in failures use the same message. |
-| 403 | `FORBIDDEN`, `LOCAL_LOGIN_DISABLED` | Admin route for a user, or local sign-in turned off. |
+| 403 | `FORBIDDEN`, `LOCAL_LOGIN_DISABLED`, `CROSS_ORIGIN` | Admin route for a user, local sign-in turned off, or a browser request from another site. |
 | 404 | `NOT_FOUND`, `FILE_MISSING`, `THUMBNAIL_UNAVAILABLE`, `SHARE_INVALID` | Unknown ID or path. The file is missing on disk, or the type has no preview. The share link is not valid. |
 | 410 | `SHARE_EXPIRED` | The share link is past its expiry. |
 | 409 | `DUPLICATE`, `CONFLICT`, `FILE_EXISTS`, `IN_USE`, `IMPORT_RUNNING` | Same bytes already filed; name already taken; a file with that name is already on disk; the item is still in use; or a Paperless import is already running. |
 | 413 | `TOO_LARGE` | Upload over 100 MB. |
-| 415 | `UNSUPPORTED_TYPE` | Upload is not a supported type. |
-| 429 | `RATE_LIMITED` | Too many failed sign-ins. |
+| 415 | `UNSUPPORTED_TYPE`, `UNSUPPORTED_MEDIA_TYPE` | Upload is not a supported type, or a body was sent without `Content-Type: application/json`. |
+| 429 | `RATE_LIMITED` | Too many sign-in attempts. See `POST /auth/login`. |
 | 502 | `IMAP_FAILED`, `PAPERLESS_FAILED`, `OIDC_DISCOVERY_FAILED` | The mail, Paperless or identity server could not be reached or refused. |
+| 503 | `BUSY` | Too many sign-ins are being checked at once. Retry after the `Retry-After` header's seconds. |
 | 500 | `INTERNAL`, `DB_ERROR` | Details are in the server log. |
 
 Unknown paths under `/api/` return a JSON `404 NOT_FOUND`.
@@ -42,7 +45,7 @@ Unknown paths under `/api/` return a JSON `404 NOT_FOUND`.
 
 | Method and path | Body or query | Result |
 | --- | --- | --- |
-| `POST /auth/login` | `{ "email", "password" }` | `200` with `{ "user", "token" }` and sets the cookie. Failures: `401 INVALID_CREDENTIALS`, `403 LOCAL_LOGIN_DISABLED` when SSO is required, `429 RATE_LIMITED` after eight failures for one email and client address within 15 minutes. |
+| `POST /auth/login` | `{ "email", "password" }` | `200` with `{ "user", "token" }` and sets the cookie. Failures: `401 INVALID_CREDENTIALS`, `403 LOCAL_LOGIN_DISABLED` when SSO is required, `429 RATE_LIMITED` for 15 minutes when, within 15 minutes, one client address has made 30 attempts with any email, or one email has had 8 attempts from one address or 20 from browsers it does not recognise. A success clears the counts for that email, but not the address's. A browser that signs in gets a one-year `archivr_device` cookie, and is then recognised: it has its own allowance of 8, so failures elsewhere cannot lock it out. `503 BUSY` when too many sign-ins are waiting for a password check. |
 | `POST /auth/logout` | | Clears the cookie. `204`, or `200` with `{ "redirect" }` when SSO is on and the provider has an end-session endpoint. The browser then goes to that URL, which ends the provider session and returns to `/login?signed_out=1`. |
 | `GET /auth/me` | | The signed-in user: `id`, `email`, `name`, `role`, `has_password`, `created_at`. |
 | `GET /auth/oidc/status` | | `{ "enabled", "disable_local_login" }`. |

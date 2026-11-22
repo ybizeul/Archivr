@@ -61,13 +61,22 @@ func (s *server) writeStoreError(w http.ResponseWriter, err error) {
 	}
 }
 
-// decodeBody reads a JSON body, writing a 400 on failure.
+// decodeBody reads a JSON body, writing the error answer on failure.
 func decodeBody(w http.ResponseWriter, r *http.Request, v any) bool {
 	if err := readJSON(w, r, v); err != nil {
-		writeError(w, http.StatusBadRequest, "INVALID_JSON", err.Error())
+		writeBodyError(w, err)
 		return false
 	}
 	return true
+}
+
+// writeBodyError answers a body that readJSON refused: 415 when it is not JSON, else 400.
+func writeBodyError(w http.ResponseWriter, err error) {
+	if errors.Is(err, errNotJSON) {
+		writeError(w, http.StatusUnsupportedMediaType, "UNSUPPORTED_MEDIA_TYPE", err.Error())
+		return
+	}
+	writeError(w, http.StatusBadRequest, "INVALID_JSON", err.Error())
 }
 
 // nonNil keeps empty lists as [] in JSON, never null.

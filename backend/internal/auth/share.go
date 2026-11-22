@@ -51,9 +51,14 @@ type Shares struct {
 // Shares returns the share-link signer that goes with these sessions. It shares the secret,
 // so JWT_SECRET controls both, and links survive a restart exactly when sessions do.
 func (s *Sessions) Shares() *Shares {
+	return &Shares{key: s.derive(shareKeyLabel)}
+}
+
+// derive returns the key for one kind of token, so a token of one kind never verifies as another.
+func (s *Sessions) derive(label string) []byte {
 	mac := hmac.New(sha256.New, s.key)
-	mac.Write([]byte(shareKeyLabel))
-	return &Shares{key: mac.Sum(nil)}
+	mac.Write([]byte(label))
+	return mac.Sum(nil)
 }
 
 // Issue returns a token that opens documentID until now+ttl. The ttl must be between

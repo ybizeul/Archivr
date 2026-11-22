@@ -91,7 +91,7 @@ func (s *server) getPaperlessImport(w http.ResponseWriter, _ *http.Request, _ st
 func (s *server) startPaperlessImport(w http.ResponseWriter, r *http.Request, _ store.User) {
 	var opts paperless.Options
 	if err := readJSON(w, r, &opts); err != nil && !errors.Is(err, errEmptyBody) {
-		writeError(w, http.StatusBadRequest, "INVALID_JSON", err.Error())
+		writeBodyError(w, err)
 		return
 	}
 	switch err := s.Paperless.Start(opts); {

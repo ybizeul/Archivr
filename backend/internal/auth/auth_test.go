@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/url"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -159,22 +161,21 @@ func TestOIDCStateIsSingleUseAndExpires(t *testing.T) {
 	}
 }
 
-func TestLoginLimiterBlocksAfterMaxFailures(t *testing.T) {
+func TestLoginLimiterBlocksAfterMaxAttempts(t *testing.T) {
 	l := NewLoginLimiter(15*time.Minute, 15*time.Minute, 3)
 	now := time.Now()
 	for i := 0; i < 3; i++ {
-		if !l.Allowed("k", now) {
-			t.Fatalf("blocked before failure %d", i+1)
+		if !l.Attempt("k", now) {
+			t.Fatalf("attempt %d refused", i+1)
 		}
-		l.Failure("k", now)
 	}
-	if l.Allowed("k", now) {
-		t.Fatal("not blocked after max failures")
+	if l.Attempt("k", now) {
+		t.Fatal("not blocked after max attempts")
 	}
-	if !l.Allowed("other", now) {
+	if !l.Attempt("other", now) {
 		t.Fatal("unrelated key blocked")
 	}
-	if !l.Allowed("k", now.Add(16*time.Minute)) {
+	if !l.Attempt("k", now.Add(16*time.Minute)) {
 		t.Fatal("block did not expire")
 	}
 }
@@ -182,12 +183,71 @@ func TestLoginLimiterBlocksAfterMaxFailures(t *testing.T) {
 func TestLoginLimiterSuccessClearsHistory(t *testing.T) {
 	l := NewLoginLimiter(15*time.Minute, 15*time.Minute, 3)
 	now := time.Now()
-	l.Failure("k", now)
-	l.Failure("k", now)
+	l.Attempt("k", now)
+	l.Attempt("k", now)
 	l.Success("k")
-	l.Failure("k", now)
-	if !l.Allowed("k", now) {
-		t.Fatal("failures before a success still count")
+	l.Attempt("k", now)
+	if !l.Attempt("k", now) {
+		t.Fatal("attempts before a success still count")
+	}
+}
+
+// Attempts are counted when they start, so a burst sent at once cannot get past the limit
+// while the first password checks are still running.
+func TestLoginLimiterCountsConcurrentAttempts(t *testing.T) {
+	l := NewLoginLimiter(15*time.Minute, 15*time.Minute, 8)
+	now := time.Now()
+	var allowed atomic.Int32
+	var wg sync.WaitGroup
+	for i := 0; i < 50; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if l.Attempt("k", now) {
+				allowed.Add(1)
+			}
+		}()
+	}
+	wg.Wait()
+	if n := allowed.Load(); n != 8 {
+		t.Fatalf("%d of 50 concurrent attempts allowed, want 8", n)
+	}
+}
+
+func TestDeviceTokenOnlyVouchesForItsOwnUser(t *testing.T) {
+	sessions, err := NewSessions("secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	devices := sessions.Devices()
+	now := time.Now()
+	token, err := devices.Issue(5, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id, ok := devices.Verify(token, 5, now); !ok || id == "" {
+		t.Fatalf("own token rejected: id %q", id)
+	}
+	if _, ok := devices.Verify(token, 6, now); ok {
+		t.Fatal("token accepted for another user")
+	}
+	if _, ok := devices.Verify(token, 5, now.Add(DeviceTTL+time.Minute)); ok {
+		t.Fatal("expired token accepted")
+	}
+	other, _ := NewSessions("other-secret")
+	if _, ok := other.Devices().Verify(token, 5, now); ok {
+		t.Fatal("token accepted under another key")
+	}
+
+	session, _ := sessions.Issue(5, "User", now)
+	share, _, _ := sessions.Shares().Issue(5, time.Hour, now)
+	for name, tok := range map[string]string{"session": session, "share link": share} {
+		if _, ok := devices.Verify(tok, 5, now); ok {
+			t.Fatalf("%s accepted as a device token", name)
+		}
+	}
+	if _, err := sessions.Verify(token, now); err == nil {
+		t.Fatal("device token accepted as a session")
 	}
 }
 

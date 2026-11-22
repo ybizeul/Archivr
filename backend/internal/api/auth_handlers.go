@@ -1,16 +1,93 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/archivr/backend/internal/auth"
 	"github.com/archivr/backend/internal/store"
 )
 
-// dummyHash is verified against when the email is unknown, so an unknown account
+// Sign-in limits. Each counts attempts over limitWindow and refuses more for limitWindow once reached.
+const (
+	maxAttemptsPerClient  = 8  // one email from one address, or from one browser the account recognises
+	maxAttemptsPerAccount = 20 // one email from browsers it does not recognise, whatever the address
+	maxAttemptsPerAddress = 30 // any email from one address
+	limitWindow           = 15 * time.Minute
+
+	// maxConcurrentPasswordChecks bounds memory: each argon2id check holds 64 MiB.
+	maxConcurrentPasswordChecks = 2
+	// passwordQueueWait is how long a sign-in waits for a free check before it is refused.
+	passwordQueueWait = 5 * time.Second
+)
+
+// loginLimits are the caps a password sign-in must pass. A browser that has signed in to the
+// account before is counted on its own and not against the account, so failures from elsewhere
+// cannot lock its owner out.
+type loginLimits struct {
+	client  *auth.LoginLimiter // email and address, or recognised browser. A success clears it
+	account *auth.LoginLimiter // email, for browsers the account does not recognise. A success clears it
+	address *auth.LoginLimiter // address alone. A success does not clear it
+}
+
+func newLoginLimits() loginLimits {
+	return loginLimits{
+		client:  auth.NewLoginLimiter(limitWindow, limitWindow, maxAttemptsPerClient),
+		account: auth.NewLoginLimiter(limitWindow, limitWindow, maxAttemptsPerAccount),
+		address: auth.NewLoginLimiter(limitWindow, limitWindow, maxAttemptsPerAddress),
+	}
+}
+
+// loginKeys are the limiter keys of one sign-in. account is empty for a recognised browser.
+type loginKeys struct {
+	address, client, account string
+}
+
+func (s *server) loginKeys(r *http.Request, email string, user store.User) loginKeys {
+	ip := s.clientIP(r)
+	keys := loginKeys{address: ip, client: email + "|" + ip, account: email}
+	if c, err := r.Cookie(deviceCookieName); err == nil && user.ID != 0 && s.devices != nil {
+		if id, ok := s.devices.Verify(c.Value, user.ID, s.Now()); ok {
+			keys.client, keys.account = "device|"+id, ""
+		}
+	}
+	return keys
+}
+
+// allowLogin counts the attempt against each key and reports whether all of them allow it.
+func (s *server) allowLogin(k loginKeys, now time.Time) bool {
+	if !s.limits.address.Attempt(k.address, now) || !s.limits.client.Attempt(k.client, now) {
+		return false
+	}
+	return k.account == "" || s.limits.account.Attempt(k.account, now)
+}
+
+// checkPassword verifies password against hash. An empty hash, for an unknown email or an
+// account without a local password, is never a match, but a dummy hash is still checked so that
+// every refusal takes as long as a wrong password. busy is true when no check slot became free.
+func (s *server) checkPassword(ctx context.Context, password, hash string) (ok, busy bool) {
+	timer := time.NewTimer(passwordQueueWait)
+	defer timer.Stop()
+	select {
+	case s.passwordSlots <- struct{}{}:
+		defer func() { <-s.passwordSlots }()
+	case <-timer.C:
+		return false, true
+	case <-ctx.Done():
+		return false, true
+	}
+	if hash == "" {
+		auth.VerifyPassword(password, unknownUserHash())
+		return false, false
+	}
+	return auth.VerifyPassword(password, hash), false
+}
+
+// dummyHash is verified against when there is no password to check, so an unknown account
 // takes as long to reject as a wrong password does.
 var (
 	dummyOnce sync.Once
@@ -35,8 +112,7 @@ type loginRequest struct {
 func (s *server) login(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	var body loginRequest
-	if err := readJSON(w, r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "INVALID_JSON", err.Error())
+	if !decodeBody(w, r, &body) {
 		return
 	}
 	email := strings.ToLower(strings.TrimSpace(body.Email))
@@ -52,32 +128,40 @@ func (s *server) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	key := email + "|" + s.clientIP(r)
-	if !s.Limiter.Allowed(key, now) {
-		writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "too many sign-in attempts. Wait 15 minutes and try again")
-		return
-	}
-
 	user, err := s.Store.UserByEmail(ctx, email)
-	hash := user.PasswordHash
-	if errors.Is(err, store.ErrNotFound) {
-		hash = unknownUserHash()
-	} else if err != nil {
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
 		writeError(w, http.StatusInternalServerError, "DB_ERROR", "could not read account")
 		return
 	}
-
-	if err != nil || !auth.VerifyPassword(body.Password, hash) {
-		s.Limiter.Failure(key, now)
+	keys := s.loginKeys(r, email, user)
+	if !s.allowLogin(keys, now) {
+		writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "too many sign-in attempts. Wait 15 minutes and try again")
+		return
+	}
+	ok, busy := s.checkPassword(ctx, body.Password, user.PasswordHash)
+	if busy {
+		w.Header().Set("Retry-After", "5")
+		writeError(w, http.StatusServiceUnavailable, "BUSY", "too many sign-ins at once. Try again in a moment")
+		return
+	}
+	if !ok {
 		writeError(w, http.StatusUnauthorized, "INVALID_CREDENTIALS", "email or password is wrong")
 		return
 	}
 
-	s.Limiter.Success(key)
+	s.limits.client.Success(keys.client)
+	if keys.account != "" {
+		s.limits.account.Success(keys.account)
+	}
 	token, err := s.issueSession(w, r, user)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "TOKEN_ERROR", "could not start session")
 		return
+	}
+	if device, err := s.devices.Issue(user.ID, now); err == nil {
+		setDeviceCookie(w, r, device)
+	} else {
+		s.Log.Warn("could not issue device cookie", "error", err)
 	}
 	// The token is in the body for API clients. The browser app relies on the cookie alone.
 	writeJSON(w, http.StatusOK, map[string]any{"user": user, "token": token})

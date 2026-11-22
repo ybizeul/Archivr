@@ -54,8 +54,7 @@ func (s *server) getAuthSettings(w http.ResponseWriter, r *http.Request, _ store
 func (s *server) putAuthSettings(w http.ResponseWriter, r *http.Request, _ store.User) {
 	ctx := r.Context()
 	var body auth.Settings
-	if err := readJSON(w, r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "INVALID_JSON", err.Error())
+	if !decodeBody(w, r, &body) {
 		return
 	}
 

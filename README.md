@@ -73,7 +73,7 @@ To build or change Archivr itself, see [DEVELOPER.md](DEVELOPER.md).
 | `DATA_DIR` | `./data` | Holds `archivr.db`, `documents/`, `trash/`, `cache/`, and `ingest/` by default. |
 | `WATCH_DIR` | `DATA_DIR/ingest` | Folder polled for new files. Imported files move to `.imported/`, rejects to `.rejected/`. |
 | `OIDC_LOGOUT_URL` | from the provider's discovery document | Provider logout endpoint used when signing out with SSO. Set it when the provider does not advertise `end_session_endpoint`, or to use a different one. When set, sign-out skips discovery. |
-| `TRUST_PROXY` | off | Set to any value behind a proxy you control. Reads `X-Forwarded-For`, `X-Forwarded-Host` and `X-Forwarded-Proto`. |
+| `TRUST_PROXY` | off | Set behind a proxy you control, to the number of proxies in front of Archivr: `1` for Traefik alone, `2` for a CDN in front of Traefik. Any value that is not a number means `1`. Reads `X-Forwarded-For`, `X-Forwarded-Host` and `X-Forwarded-Proto`. The client address is the `X-Forwarded-For` entry the outermost proxy added. Too high a number lets clients choose their address and get around sign-in limits. |
 | `JWT_SECRET` | random per run | Signs session cookies and share links. Set it, or everyone is signed out and every share link stops working on restart. |
 | `INIT_ADMIN_EMAIL` | `admin@archivr.local` | The first admin account. |
 | `INIT_PASSWORD` | unset | Bootstrap password. **Applied on every start while set.** It resets that account's password and role, so remove it once you can sign in. |

@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/netip"
 	"strconv"
 	"strings"
 	"time"
@@ -20,11 +21,19 @@ import (
 
 const (
 	sessionCookieName = "archivr_session"
+	deviceCookieName  = "archivr_device"
+	loginPath         = "/api/v1/auth/login"
 	oidcCallbackPath  = "/api/v1/auth/oidc/callback"
 	// signedOutPath is where the provider sends the browser after a logout. The login page
 	// reads the flag and does not start SSO again.
 	signedOutPath = "/login?signed_out=1"
 )
+
+// webCSP is the content security policy of the web app. Mantine injects style elements, so
+// styles need 'unsafe-inline'.
+const webCSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
+	"img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; worker-src 'self'; " +
+	"object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
 
 // Deps are the collaborators the handlers need. Now is injected so tests can control time.
 type Deps struct {
@@ -32,12 +41,13 @@ type Deps struct {
 	Sessions  *auth.Sessions
 	Shares    *auth.Shares // share-link signer. Derived from Sessions when nil
 	OIDC      *auth.OIDCService
-	Limiter   *auth.LoginLimiter
 	PublicURL string // external base URL, e.g. https://archive.example.org. Derived from the request when empty
 	// OIDCLogoutURL is the provider's logout endpoint. When set, it is used instead of the discovery document's end_session_endpoint.
 	OIDCLogoutURL string
 	TrustProxy    bool // trust X-Forwarded-For/-Host/-Proto for the client IP and public URL. Enable only behind a proxy you control
-	Now           func() time.Time
+	// ProxyHops is how many trusted proxies append to X-Forwarded-For. The client IP is the entry the outermost one added. 0 means 1
+	ProxyHops int
+	Now       func() time.Time
 
 	Archive   *archive.Service
 	Ingest    *ingest.Importer
@@ -52,6 +62,9 @@ type Deps struct {
 
 type server struct {
 	Deps
+	devices       *auth.Devices
+	limits        loginLimits
+	passwordSlots chan struct{}
 }
 
 // NewRouter returns the handler for /healthz, /api/v1/ and the web app.
@@ -65,7 +78,14 @@ func NewRouter(d Deps) http.Handler {
 	if d.Shares == nil && d.Sessions != nil {
 		d.Shares = d.Sessions.Shares()
 	}
-	s := &server{Deps: d}
+	s := &server{
+		Deps:          d,
+		limits:        newLoginLimits(),
+		passwordSlots: make(chan struct{}, maxConcurrentPasswordChecks),
+	}
+	if d.Sessions != nil {
+		s.devices = d.Sessions.Devices()
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -143,7 +163,42 @@ func NewRouter(d Deps) http.Handler {
 	if d.Web != nil {
 		mux.Handle("/", d.Web)
 	}
-	return mux
+
+	// Browsers mark cross-origin requests. Refusing state-changing ones means a page on another
+	// origin, a sibling subdomain included, cannot act with the user's cookie.
+	cop := http.NewCrossOriginProtection()
+	cop.SetDenyHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeError(w, http.StatusForbidden, "CROSS_ORIGIN", "cross-origin requests are refused")
+	}))
+	return s.securityHeaders(cop.Handler(mux))
+}
+
+// securityHeaders sets the headers every response carries. Pages of the web app also get the
+// content security policy and are kept out of frames. API responses are JSON or stored files,
+// not pages that run the app, so they do not.
+func (s *server) securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("Referrer-Policy", "same-origin")
+		if s.servesHTTPS(r) {
+			h.Set("Strict-Transport-Security", "max-age=31536000")
+		}
+		if !strings.HasPrefix(r.URL.Path, "/api/") {
+			h.Set("Content-Security-Policy", webCSP)
+			h.Set("X-Frame-Options", "DENY")
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// servesHTTPS reports whether browsers reach Archivr over HTTPS: PUBLIC_URL says so, or the
+// request came over TLS, directly or through a trusted proxy.
+func (s *server) servesHTTPS(r *http.Request) bool {
+	if s.PublicURL != "" {
+		return strings.HasPrefix(s.PublicURL, "https://")
+	}
+	return r.TLS != nil || (s.TrustProxy && strings.EqualFold(firstForwardedValue(r.Header.Get("X-Forwarded-Proto")), "https"))
 }
 
 // authed wraps a handler that needs a signed-in user, and optionally an admin.
@@ -237,20 +292,42 @@ func firstForwardedValue(v string) string {
 	return strings.TrimSpace(v)
 }
 
+// clientIP returns the address the sign-in limits count against. Behind trusted proxies it is
+// the X-Forwarded-For entry the outermost one added: entries further left are whatever the
+// client sent. An IPv6 address is reduced to its /64, the block one subscriber usually holds.
 func (s *server) clientIP(r *http.Request) string {
+	addr := ""
 	if s.TrustProxy {
-		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-			if i := strings.Index(xff, ","); i >= 0 {
-				return strings.TrimSpace(xff[:i])
+		var hops []string
+		for _, v := range r.Header.Values("X-Forwarded-For") {
+			for _, h := range strings.Split(v, ",") {
+				if h = strings.TrimSpace(h); h != "" {
+					hops = append(hops, h)
+				}
 			}
-			return strings.TrimSpace(xff)
+		}
+		if len(hops) > 0 {
+			addr = hops[max(len(hops)-max(s.ProxyHops, 1), 0)]
 		}
 	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
+	if addr == "" {
+		host, _, err := net.SplitHostPort(r.RemoteAddr)
+		if err != nil {
+			host = r.RemoteAddr
+		}
+		addr = host
 	}
-	return host
+	ip, err := netip.ParseAddr(addr)
+	if err != nil {
+		return addr
+	}
+	ip = ip.Unmap()
+	if ip.Is6() {
+		if p, err := ip.Prefix(64); err == nil {
+			return p.String()
+		}
+	}
+	return ip.String()
 }
 
 func setSessionCookie(w http.ResponseWriter, r *http.Request, token string) {
@@ -262,6 +339,20 @@ func setSessionCookie(w http.ResponseWriter, r *http.Request, token string) {
 		Secure:   isHTTPS(r),
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   int(auth.SessionTTL.Seconds()),
+	})
+}
+
+// setDeviceCookie marks this browser as one that has signed in to the account before. Only the
+// login endpoint reads it.
+func setDeviceCookie(w http.ResponseWriter, r *http.Request, token string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     deviceCookieName,
+		Value:    token,
+		Path:     loginPath,
+		HttpOnly: true,
+		Secure:   isHTTPS(r),
+		SameSite: http.SameSiteStrictMode,
+		MaxAge:   int(auth.DeviceTTL.Seconds()),
 	})
 }
 
