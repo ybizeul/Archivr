@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ActionIcon, Autocomplete, Box, Button, Chip, Group, Loader, Modal, ScrollArea, Select, Stack, TagsInput, Text, TextInput, Title, Tooltip, UnstyledButton } from '@mantine/core'
+import { ActionIcon, Autocomplete, Box, Button, Checkbox, Chip, Group, Loader, Modal, ScrollArea, Select, Stack, TagsInput, Text, TextInput, Title, Tooltip, UnstyledButton } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
 import { notifications } from '@mantine/notifications'
 import { IconChevronDown, IconChevronLeft, IconChevronRight, IconChevronUp } from '@tabler/icons-react'
@@ -91,6 +91,8 @@ export function TriagePage() {
   const [selectedTags, setSelectedTags] = useState<string[]>([])
   const [bulkValues, setBulkValues] = useState<BulkChanges | null>(null)
   const [bulkRunning, setBulkRunning] = useState(false)
+  // Documents ticked in the queue. When none in the view is ticked, File all covers the whole view.
+  const [checkedIds, setCheckedIds] = useState<Set<number>>(() => new Set())
   const folderList = useFolders()
 
   const allItems = queue.items
@@ -131,6 +133,16 @@ export function TriagePage() {
   // Most-used tags first; ties fall back to name.
   const tagOptions = [...tagCounts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
   const total = filtering ? items.length : queue.total
+  // Only ticked documents that are in the current view count; nothing ticked means the whole view.
+  const checkedItems = items.filter((d) => checkedIds.has(d.id))
+  const bulkTargets = checkedItems.length > 0 ? checkedItems : items
+  const setChecked = (id: number, on: boolean) =>
+    setCheckedIds((prev) => {
+      const next = new Set(prev)
+      if (on) next.add(id)
+      else next.delete(id)
+      return next
+    })
   const clearFilters = () => {
     setTypeFilter(null)
     setCorrespondentFilter(null)
@@ -233,7 +245,7 @@ export function TriagePage() {
   }
 
   const fileAll = async (changes: BulkChanges) => {
-    const targets = items
+    const targets = bulkTargets
     let done = 0
     let failed = 0
     setBulkRunning(true)
@@ -254,6 +266,7 @@ export function TriagePage() {
     }
     setBulkRunning(false)
     setBulkValues(null)
+    setCheckedIds(new Set())
     notifications.show({
       color: failed ? 'red' : 'prussian',
       title: failed ? `${failed} could not be filed` : undefined,
@@ -299,7 +312,8 @@ export function TriagePage() {
       onSave={(values) => void fileDocument(values, 'save', null)}
       onFile={(values) => void fileDocument(values, 'file', nextAfterCurrent)}
       onDelete={() => setConfirmDelete(true)}
-      bulkCount={items.length}
+      bulkCount={bulkTargets.length}
+      bulkChecked={checkedItems.length > 0}
       bulkBusy={bulkRunning || queue.hasNextPage}
       onFileAll={setBulkValues}
     />
@@ -309,12 +323,17 @@ export function TriagePage() {
     <Modal
       opened={bulkValues !== null}
       onClose={() => !bulkRunning && setBulkValues(null)}
-      title={`File ${items.length} document${items.length === 1 ? '' : 's'}?`}
+      title={`File ${bulkTargets.length} document${bulkTargets.length === 1 ? '' : 's'}?`}
       centered
     >
       <Stack>
         <Text size="sm">
-          {filtering ? `Every document matching ${viewLabel(activeType, activeCorrespondent, activeTags)}` : 'Every document in the inbox'} will be filed
+          {checkedItems.length > 0
+            ? `The ${checkedItems.length} document${checkedItems.length === 1 ? '' : 's'} you ticked`
+            : filtering
+              ? `Every document matching ${viewLabel(activeType, activeCorrespondent, activeTags)}`
+              : 'Every document in the inbox'}{' '}
+          will be filed
           with the folder and the fields you changed below. Each keeps its own title, and added tags are merged with its existing ones.
         </Text>
         {bulkValues && (
@@ -412,7 +431,14 @@ export function TriagePage() {
     <Box className="ax-triage">
       {filterBar}
       <Box className="ax-queue-col">
-        <QueueList items={items} total={total} selectedId={viewDoc.id} onSelect={select} />
+        <QueueList
+          items={items}
+          total={total}
+          selectedId={viewDoc.id}
+          checkedIds={checkedIds}
+          onSelect={select}
+          onCheck={setChecked}
+        />
       </Box>
       <Box className="ax-sheet-col">
         <Group justify="space-between" mb="xs" wrap="nowrap">
@@ -566,20 +592,32 @@ function QueueList({
   items,
   total,
   selectedId,
+  checkedIds,
   onSelect,
+  onCheck,
 }: {
   items: Document[]
   total: number
   selectedId: number
+  checkedIds: Set<number>
   onSelect: (id: number) => void
+  onCheck: (id: number, checked: boolean) => void
 }) {
+  const anyChecked = items.some((d) => checkedIds.has(d.id))
   return (
     <>
       <Text className="ax-queue-head ax-mono">Queue · {total}</Text>
       <ScrollArea className="ax-queue-scroll" type="auto">
-        <Stack gap={6}>
+        <Stack gap={6} className="ax-queue-list" data-any-checked={anyChecked || undefined}>
           {items.map((d) => (
-            <QueueItem key={d.id} doc={d} selected={d.id === selectedId} onSelect={onSelect} />
+            <QueueItem
+              key={d.id}
+              doc={d}
+              selected={d.id === selectedId}
+              checked={checkedIds.has(d.id)}
+              onSelect={onSelect}
+              onCheck={onCheck}
+            />
           ))}
         </Stack>
       </ScrollArea>
@@ -628,7 +666,35 @@ function QueueStepper({
   )
 }
 
-function QueueItem({ doc, selected, onSelect }: { doc: Document; selected: boolean; onSelect: (id: number) => void }) {
+function QueueItem({
+  doc,
+  selected,
+  checked,
+  onSelect,
+  onCheck,
+}: {
+  doc: Document
+  selected: boolean
+  checked: boolean
+  onSelect: (id: number) => void
+  onCheck: (id: number, checked: boolean) => void
+}) {
+  return (
+    <div className="ax-queue-row">
+      <Checkbox
+        className="ax-queue-check"
+        size="xs"
+        checked={checked}
+        data-checked={checked || undefined}
+        onChange={(e) => onCheck(doc.id, e.currentTarget.checked)}
+        aria-label={`Select No. ${doc.id} for File all`}
+      />
+      <QueueButton doc={doc} selected={selected} onSelect={onSelect} />
+    </div>
+  )
+}
+
+function QueueButton({ doc, selected, onSelect }: { doc: Document; selected: boolean; onSelect: (id: number) => void }) {
   return (
     <UnstyledButton
       className={`ax-queue-item${selected ? ' selected' : ''}`}
@@ -690,6 +756,7 @@ function FilingCard({
   onFile,
   onDelete,
   bulkCount,
+  bulkChecked,
   bulkBusy,
   onFileAll,
 }: {
@@ -700,6 +767,7 @@ function FilingCard({
   onFile: (v: FilingValues) => void
   onDelete: () => void
   bulkCount: number
+  bulkChecked: boolean
   bulkBusy: boolean
   onFileAll: (v: BulkChanges) => void
 }) {
@@ -885,9 +953,9 @@ function FilingCard({
           variant="default"
           onClick={submitFileAll}
           disabled={disabled || bulkBusy || bulkCount === 0}
-          title="Apply this folder and these details to every document in the current view. Each keeps its own title."
+          title={`Apply this folder and these details to ${bulkChecked ? 'the ticked documents' : 'every document in the current view'}. Each keeps its own title.`}
         >
-          File all ({bulkCount})
+          {bulkChecked ? `File selected (${bulkCount})` : `File all (${bulkCount})`}
         </Button>
         <Button fullWidth variant="subtle" color="gray" onClick={() => onSave(values())} disabled={disabled} size="xs">
           Save details

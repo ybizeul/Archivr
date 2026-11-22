@@ -348,6 +348,33 @@ html[data-mantine-color-scheme='dark'] .mantine-Button-root[data-variant='filled
   color: var(--ax-ink);
 }
 
+.ax-queue-row {
+  position: relative;
+}
+
+/* Discreet selection box: hidden until the row is hovered, or once anything in the queue is checked. */
+.ax-queue-check {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 1;
+  opacity: 0;
+  transition: opacity 120ms;
+}
+
+.ax-queue-row:hover .ax-queue-check,
+.ax-queue-check:focus-within,
+.ax-queue-check[data-checked],
+.ax-queue-list[data-any-checked] .ax-queue-check {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .ax-queue-check {
+    opacity: 1;
+  }
+}
+
 .ax-queue-item:hover {
   background: color-mix(in srgb, var(--ax-sheet) 60%, transparent);
 }
