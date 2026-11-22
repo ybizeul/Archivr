@@ -10,6 +10,7 @@ import { DateField } from '../components/DateField'
 import { DeleteDocumentDialog } from '../components/DeleteDocumentDialog'
 import { DocViewer } from '../components/DocViewer'
 import { LibraryBrowser } from '../components/LibraryBrowser'
+import { NewFolder } from '../components/NewFolder'
 import { ShareDialog } from '../components/ShareDialog'
 import { SheetBar } from '../components/SheetBar'
 import { TagsField } from '../components/TagsField'
@@ -280,14 +281,18 @@ function DocumentView({ doc, libraryLocation }: { doc: DocumentDetail; libraryLo
                 clearable
                 placeholder="Add a tag"
               />
-              <Select
-                label="Folder"
-                data={folderData}
-                value={folderId}
-                onChange={(v) => v && setFolderId(v)}
-                allowDeselect={false}
-                searchable
-              />
+              <Group align="flex-end" gap="xs" wrap="nowrap">
+                <Select
+                  label="Folder"
+                  data={folderData}
+                  value={folderId}
+                  onChange={(v) => v && setFolderId(v)}
+                  allowDeselect={false}
+                  searchable
+                  style={{ flex: 1 }}
+                />
+                <NewFolder compact selectedFolder={folderId} onCreated={(f) => setFolderId(String(f.id))} />
+              </Group>
               {inTrash && (
                 <Alert color="gray" variant="light">
                   {doc.valid_until
