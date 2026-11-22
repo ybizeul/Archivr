@@ -201,7 +201,7 @@ function ImportForm({ configured, saved, folders }: { configured: boolean; saved
         <Text size="sm" c="dimmed">
           Each document keeps its title, date, document type and tags. Archivr reads the files again with its own text
           recognition, so large libraries take a while to become searchable. Running the import again only adds what is
-          new, and a document you deleted in Archivr is brought back. Documents already in the archive are not imported again, but the tag rules below still move them.
+          new, and a document you deleted in Archivr is brought back. Documents already in the archive are not imported again, but the tag rules below still file those that are waiting in INBOX. A document that already has a folder is never moved.
         </Text>
       </div>
 
@@ -622,7 +622,7 @@ function ProgressView({ p }: { p: PaperlessProgress }) {
         <Count label="Imported" value={p.imported} />
         <Count label="Already imported" value={p.already_imported} />
         <Count label="Duplicates" value={p.duplicates} />
-        <Count label="Moved by rules" value={p.moved} />
+        <Count label="Filed by rules" value={p.moved} />
         <Count label="Not supported" value={p.unsupported} />
         <Count label="Failed" value={p.failed} />
       </Group>

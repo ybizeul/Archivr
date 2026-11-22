@@ -97,7 +97,7 @@ In **Admin → Paperless**, enter the address of your Paperless-ngx server and a
 - Each document keeps its title, date, document type, correspondent, and tags. Document types that do not exist yet are created. The Paperless correspondent goes into the document's correspondent field.
 - Documents go to INBOX, or to a folder you pick.
 - **File by tag.** Before starting, you can map Paperless tags to Archivr folders, so documents are filed directly instead of landing in INBOX. The rules are ordered: a document goes to the folder of the first rule whose tag it carries, and a document that matches no rule goes to the folder chosen above. Tags match without regard to case. Folders must already exist. Press **Get tag lists** to read the tags from Paperless: every tag appears with its document count and a folder picker, with a filter and an "only unmapped" switch. Folders can be made on this screen without leaving it, using **New folder**. The rules are saved, and starting an import saves them first.
-- The rules also apply to documents that are already in the archive, whether an earlier run imported them or the same file is there under another name: a document that matches a rule is moved to that folder, wherever it is filed now, including a folder you chose by hand. A document that matches no rule is never moved. The result screen counts how many documents were moved. This makes the rules a way to sort out an earlier import: set them, then run the import again.
+- The rules also apply to documents that are already in the archive, whether an earlier run imported them or the same file is there under another name, but only to those still waiting in INBOX: a document that matches a rule is filed in that folder. A document that already has a folder, whether a rule or you put it there, is never moved, and neither is one that matches no rule. The result screen counts how many documents were filed this way. This makes the rules a way to sort out an earlier import that is still in INBOX: set them, then run the import again.
 - The original file is imported. When Archivr cannot read the original (a Word file, for example) the PDF that Paperless made of it is used.
 - Archivr reads every file again with its own text recognition. The text Paperless extracted is not copied over.
 - Running it again only adds what is new. Documents already imported are skipped without being downloaded again, and a document whose bytes already exist in Archivr is reported as a duplicate.
@@ -138,7 +138,7 @@ Document numbers start at 10000 and are never reused.
 - Email intake reads unread messages only. Mail is marked read after its attachments are filed.
 - Files over 100 MB are refused.
 - One server process per data directory. SQLite and the file tree are not shared between instances.
-- Without Tesseract, documents are marked OCR `skipped`. Without Poppler, PDFs get no text and no preview. **Admin → Text recognition** says what is missing, and **Run OCR again** fixes skipped documents once the tools are installed.
+- The Docker image includes Tesseract (English and French) and Poppler. Outside the container, without Tesseract, documents are marked OCR `skipped`, and without Poppler, PDFs get no text and no preview. **Admin → Text recognition** says what is missing, and **Run OCR again** fixes skipped documents once the tools are installed.
 
 ## For developers
 

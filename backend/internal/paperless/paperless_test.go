@@ -627,6 +627,33 @@ func TestDuplicateBytesAreFiledByTheRulesOfTheLaterDocument(t *testing.T) {
 	}
 }
 
+func TestRepeatRunNeverMovesADocumentThatHasAFolder(t *testing.T) {
+	f := newFixture(t, sampleDocs()[:1]) // tagged lease
+	ctx := context.Background()
+	f.runToEnd(t, Options{}) // lands in INBOX
+
+	elsewhere, _ := f.arch.CreateFolder(ctx, nil, "Elsewhere")
+	housing, _ := f.arch.CreateFolder(ctx, nil, "Housing")
+	docs, _, _ := f.st.ListDocuments(ctx, store.DocFilter{Limit: 10})
+	if len(docs) != 1 {
+		t.Fatalf("%d documents", len(docs))
+	}
+	if _, err := f.arch.Update(ctx, docs[0].ID, archive.Patch{FolderID: &elsewhere.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveMapping(ctx, f.st, Mapping{Rules: []TagFolder{{Tag: "lease", FolderID: housing.ID}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	p := f.runToEnd(t, Options{})
+	if p.AlreadyImported != 1 || p.Moved != 0 || p.Failed != 0 {
+		t.Fatalf("progress = %+v", p)
+	}
+	if got := folderPathOf(t, f, "Lease 2026"); got != "Elsewhere" {
+		t.Errorf("a document filed by hand moved to %q", got)
+	}
+}
+
 func TestExistingDocumentAlreadyInTheRightFolderIsNotMoved(t *testing.T) {
 	f := newFixture(t, sampleDocs()[:1])
 	ctx := context.Background()

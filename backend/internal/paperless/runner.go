@@ -302,9 +302,10 @@ type outcome struct {
 }
 
 // process imports one document. When it is already in the archive, from an earlier
-// run or as the same bytes under another source, the tag rules still apply and move
-// it to the folder of the first matching rule. With no matching rule it is left where
-// it is, so a document is never sent to the default folder after the fact.
+// run or as the same bytes under another source, the tag rules only apply if it is
+// still in INBOX: it then goes to the folder of the first matching rule. A document
+// that has a folder already is left there, and so is one that matches no rule, so a
+// repeat run never changes where something was filed.
 func (r *Runner) process(
 	ctx context.Context, c *Client, settings Settings, opts Options, mapping Mapping, d Doc,
 	tags, types, correspondents map[int64]string, typeIDs *typeIndex,
@@ -341,9 +342,11 @@ func (r *Runner) process(
 	return outcome{Result: res}, nil
 }
 
-// refile moves an existing document into the folder a rule chose, unless it is there already.
+// refile gives an existing document the folder a rule chose, but only when it has
+// none yet, meaning it still sits in INBOX. A document that is already filed, by an
+// earlier run or by hand, is never moved.
 func (r *Runner) refile(ctx context.Context, res ingest.Result, folderID int64) (outcome, error) {
-	if res.Document.FolderID == folderID {
+	if res.Document.FolderID != archive.InboxID || res.Document.FolderID == folderID {
 		return outcome{Result: res}, nil
 	}
 	moved, err := r.Archive.Update(ctx, res.Document.ID, archive.Patch{FolderID: &folderID})
