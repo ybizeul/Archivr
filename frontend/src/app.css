@@ -974,3 +974,73 @@ html[data-mantine-color-scheme='dark'] .mantine-Button-root[data-variant='filled
     justify-content: flex-start;
   }
 }
+
+/* Library card view: a responsive grid of tiles, thumbnail on top, metadata below. */
+.ax-doc-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 16px;
+}
+
+.ax-doc-grid li {
+  display: flex;
+  min-width: 0;
+}
+
+.ax-doc-tile {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  box-sizing: border-box;
+  text-align: left;
+  color: var(--ax-ink);
+  background: var(--ax-sheet);
+  border: 1px solid var(--ax-rule);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.ax-doc-tile:hover {
+  border-color: var(--ax-accent);
+}
+
+.ax-doc-tile:focus-visible {
+  outline-offset: 2px;
+}
+
+.ax-doc-tile-thumb {
+  aspect-ratio: 4 / 3;
+  background: var(--ax-mist);
+  border-bottom: 1px solid var(--ax-rule);
+  overflow: hidden;
+}
+
+.ax-doc-tile-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top;
+}
+
+.ax-doc-tile-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px 12px;
+  min-width: 0;
+}
+
+@media (max-width: 767px) {
+  .ax-doc-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .ax-view-label {
+    display: none;
+  }
+}

@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react'
-import { Badge, Box, Button, Collapse, Group, Pagination, Paper, Select, Stack, Table, Text, TextInput, Title, UnstyledButton, Switch, Loader } from '@mantine/core'
-import { useDebouncedValue, useMediaQuery } from '@mantine/hooks'
-import { IconAdjustmentsHorizontal, IconChevronDown, IconChevronUp, IconFolder, IconSearch } from '@tabler/icons-react'
+import { useEffect, useState, type ReactNode } from 'react'
+import { Badge, Box, Button, Collapse, Group, Pagination, Paper, SegmentedControl, Select, Stack, Table, Text, TextInput, Title, UnstyledButton, Switch, Loader } from '@mantine/core'
+import { useDebouncedValue, useLocalStorage, useMediaQuery } from '@mantine/hooks'
+import { IconAdjustmentsHorizontal, IconChevronDown, IconChevronUp, IconFolder, IconLayoutGrid, IconList, IconSearch } from '@tabler/icons-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useDocuments, useFolders, useTags, useTypes } from '../api/queries'
 import type { Document } from '../api/types'
@@ -12,6 +12,17 @@ import { UploadButton } from '../components/UploadButton'
 import { accession, formatDate, folderLabel, OCR_LABEL } from '../lib/format'
 
 const PAGE_SIZE = 50
+
+type LibraryView = 'list' | 'grid'
+
+function ViewLabel({ icon, text }: { icon: ReactNode; text: string }) {
+  return (
+    <Group gap={6} wrap="nowrap" justify="center">
+      {icon}
+      <span className="ax-view-label">{text}</span>
+    </Group>
+  )
+}
 
 const SORTS = [
   { value: '', label: 'Newest first' },
@@ -34,6 +45,8 @@ export function LibraryPage() {
   const isMobile = useMediaQuery('(max-width: 767px)', undefined, { getInitialValueInEffect: false }) ?? false
   const [browseOpen, setBrowseOpen] = useState(false)
   const [filtersOpen, setFiltersOpen] = useState(false)
+  // The chosen layout is a personal preference, so it is remembered in this browser rather than the URL.
+  const [view, setView] = useLocalStorage<LibraryView>({ key: 'archivr-library-view', defaultValue: 'list' })
 
   const folder = Number(params.get('folder')) || undefined
   const q = params.get('q') ?? ''
@@ -150,9 +163,21 @@ export function LibraryPage() {
           <Title order={2} className="ax-library-title">
             {title}
           </Title>
-          <Box visibleFrom="sm">
-            <UploadButton variant="filled" />
-          </Box>
+          <Group gap="sm" wrap="nowrap">
+            <SegmentedControl
+              size="xs"
+              value={view}
+              onChange={(v) => setView(v as LibraryView)}
+              aria-label="Library view"
+              data={[
+                { value: 'list', label: <ViewLabel icon={<IconList size={16} stroke={1.6} />} text="List" /> },
+                { value: 'grid', label: <ViewLabel icon={<IconLayoutGrid size={16} stroke={1.6} />} text="Cards" /> },
+              ]}
+            />
+            <Box visibleFrom="sm">
+              <UploadButton variant="filled" />
+            </Box>
+          </Group>
         </Group>
 
         <Box className="ax-filters">
@@ -236,26 +261,28 @@ export function LibraryPage() {
           </Collapse>
         </Box>
 
-        <Paper className="ax-table-sheet" p={0} withBorder>
-          {docs.isPending ? (
-            <Box p="lg">
-              <Loader size="sm" />
-            </Box>
-          ) : docs.data?.items.length === 0 ? (
-            <Box p="xl">
-              <Text fw={600}>Nothing matches.</Text>
-              <Text c="dimmed" size="sm">
-                Try fewer filters, or search for a shorter word.
-              </Text>
-            </Box>
-          ) : (
-            isMobile ? (
+        {!docs.isPending && (docs.data?.items.length ?? 0) > 0 && view === 'grid' ? (
+          <DocumentGrid items={docs.data?.items ?? []} showSnippet={q !== ''} onOpen={(id) => navigate(`/documents/${id}`)} />
+        ) : (
+          <Paper className="ax-table-sheet" p={0} withBorder>
+            {docs.isPending ? (
+              <Box p="lg">
+                <Loader size="sm" />
+              </Box>
+            ) : docs.data?.items.length === 0 ? (
+              <Box p="xl">
+                <Text fw={600}>Nothing matches.</Text>
+                <Text c="dimmed" size="sm">
+                  Try fewer filters, or search for a shorter word.
+                </Text>
+              </Box>
+            ) : isMobile ? (
               <DocumentCards items={docs.data?.items ?? []} showSnippet={q !== ''} onOpen={(id) => navigate(`/documents/${id}`)} />
             ) : (
               <DocumentTable items={docs.data?.items ?? []} showSnippet={q !== ''} onOpen={(id) => navigate(`/documents/${id}`)} />
-            )
-          )}
-        </Paper>
+            )}
+          </Paper>
+        )}
 
         <Group justify="space-between" mt="md" gap="xs">
           <Text size="sm" c="dimmed" className="ax-mono">
@@ -411,5 +438,78 @@ function DocumentCards({
         </li>
       ))}
     </Stack>
+  )
+}
+
+/** The card view: a thumbnail of the first page above the document's metadata. */
+function DocumentGrid({
+  items,
+  showSnippet,
+  onOpen,
+}: {
+  items: Document[]
+  showSnippet: boolean
+  onOpen: (id: number) => void
+}) {
+  return (
+    <ul className="ax-doc-grid">
+      {items.map((d) => (
+        <li key={d.id}>
+          <UnstyledButton className="ax-doc-tile" onClick={() => onOpen(d.id)} aria-label={`No. ${d.id}, ${d.title}`}>
+            <div className="ax-doc-tile-thumb">
+              <img
+                src={`/api/v1/documents/${d.id}/thumbnail`}
+                alt=""
+                loading="lazy"
+                onError={(e) => {
+                  e.currentTarget.style.visibility = 'hidden'
+                }}
+              />
+            </div>
+            <div className="ax-doc-tile-body">
+              <Group justify="space-between" gap="xs" wrap="nowrap">
+                <Text size="xs" className="ax-mono ax-accent">
+                  {accession(d.id)}
+                </Text>
+                <Text size="xs" c="dimmed" className="ax-mono">
+                  {formatDate(d.document_date)}
+                </Text>
+              </Group>
+              <Text size="sm" fw={600} lineClamp={2} className="ax-doc-card-title">
+                {d.title}
+              </Text>
+              {showSnippet && d.snippet && (
+                <Text size="xs" c="dimmed" lineClamp={2} className="ax-snippet">
+                  <Snippet text={d.snippet} />
+                </Text>
+              )}
+              {d.type && (
+                <Group gap={6} wrap="nowrap">
+                  <span className="ax-type-dot" style={{ background: d.type.color }} aria-hidden="true" />
+                  <Text size="xs" truncate>
+                    {d.type.name}
+                  </Text>
+                </Group>
+              )}
+              <Text size="xs" c="dimmed" truncate>
+                {folderLabel(d.folder.path)}
+              </Text>
+              <Group gap={4}>
+                {d.tags.slice(0, 3).map((t) => (
+                  <Badge key={t} variant="light" color="gray" size="sm" radius="sm">
+                    {t}
+                  </Badge>
+                ))}
+                {(d.ocr_status === 'failed' || d.ocr_status === 'pending') && (
+                  <Badge variant="outline" color={d.ocr_status === 'failed' ? 'oxide' : 'gray'} size="sm" radius="sm">
+                    {OCR_LABEL[d.ocr_status]}
+                  </Badge>
+                )}
+              </Group>
+            </div>
+          </UnstyledButton>
+        </li>
+      ))}
+    </ul>
   )
 }
