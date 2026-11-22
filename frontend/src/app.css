@@ -253,11 +253,31 @@ html[data-mantine-color-scheme='dark'] .mantine-Button-root[data-variant='filled
 .ax-triage {
   display: grid;
   grid-template-columns: 124px minmax(0, 1fr) 260px;
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 12px;
   height: calc(100vh - 56px);
   padding: 12px;
   box-sizing: border-box;
   background: var(--ax-mist);
+}
+
+.ax-filterbar {
+  grid-column: 1 / -1;
+  max-height: 76px;
+  overflow-y: auto;
+  padding: 6px 10px;
+  box-sizing: border-box;
+  background: var(--ax-sheet);
+  border: 1px solid var(--ax-rule);
+  border-radius: 4px;
+}
+
+.ax-triage-mobile .ax-filterbar {
+  flex: none;
+  grid-column: auto;
+  border-width: 0 0 1px;
+  border-radius: 0;
+  padding: 6px 12px;
 }
 
 .ax-queue-col {

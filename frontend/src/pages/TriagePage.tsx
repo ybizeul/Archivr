@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ActionIcon, Autocomplete, Box, Button, Group, Loader, ScrollArea, Select, Stack, TagsInput, Text, TextInput, Title, Tooltip, UnstyledButton } from '@mantine/core'
+import { ActionIcon, Autocomplete, Box, Button, Chip, Group, Loader, Modal, ScrollArea, Select, Stack, TagsInput, Text, TextInput, Title, Tooltip, UnstyledButton } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
 import { notifications } from '@mantine/notifications'
 import { IconChevronDown, IconChevronLeft, IconChevronRight, IconChevronUp } from '@tabler/icons-react'
@@ -7,6 +7,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import {
   useCorrespondents,
   useInboxQueue,
+  useDeleteDocument,
   useFolders,
   useSuggestions,
   useTags,
@@ -35,6 +36,8 @@ export function TriagePage() {
   const queue = useInboxQueue()
   const { hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage } = queue
   const patch = usePatchDocument()
+  const remove = useDeleteDocument()
+  const [confirmDelete, setConfirmDelete] = useState(false)
   const [command, setCommand] = useState<Command | null>(null)
 
   // Load the rest of the inbox in the background, one page at a time, until the queue is complete.
@@ -42,8 +45,22 @@ export function TriagePage() {
     if (hasNextPage && !isFetchingNextPage && !isFetchNextPageError) void fetchNextPage()
   }, [hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage])
 
-  const items = queue.items
-  const total = queue.total
+  // Tag filter: a document stays in the view only if it carries every selected tag (AND).
+  const [selectedTags, setSelectedTags] = useState<string[]>([])
+  const [bulkValues, setBulkValues] = useState<FilingValues | null>(null)
+  const [bulkRunning, setBulkRunning] = useState(false)
+  const folderList = useFolders()
+  const typeList = useTypes()
+
+  const allItems = queue.items
+  const tagCounts = new Map<string, number>()
+  for (const d of allItems) for (const t of d.tags) tagCounts.set(t, (tagCounts.get(t) ?? 0) + 1)
+  const tagOptions = [...tagCounts.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+  // A tag drops out of the filter once no inbox document carries it any more.
+  const activeTags = selectedTags.filter((t) => tagCounts.has(t))
+  const filtering = activeTags.length > 0
+  const items = filtering ? allItems.filter((d) => activeTags.every((t) => d.tags.includes(t))) : allItems
+  const total = filtering ? items.length : queue.total
   const selectedId = Number(params.get('doc')) || 0
   const index = Math.max(0, items.findIndex((d) => d.id === selectedId))
   const current: Document | undefined = items[index]
@@ -108,8 +125,61 @@ export function TriagePage() {
     )
   }
 
-  if (!viewDoc) {
+  if (allItems.length === 0 && !filed) {
     return <EmptyInbox onUploaded={() => undefined} />
+  }
+
+  const filterBar = (
+    <TagFilterBar
+      options={tagOptions}
+      value={activeTags}
+      onChange={setSelectedTags}
+      shown={items.length}
+      total={allItems.length}
+    />
+  )
+
+  if (!viewDoc) {
+    return (
+      <Box>
+        {filterBar}
+        <Text c="dimmed" p="xl">
+          No inbox document carries all of these tags.
+        </Text>
+      </Box>
+    )
+  }
+
+  const fileAll = async (values: FilingValues) => {
+    if (!values.folderId) return
+    const targets = items
+    let done = 0
+    let failed = 0
+    setBulkRunning(true)
+    for (const d of targets) {
+      // The title is never sent: every document keeps its own. Empty fields leave the document as it is,
+      // and the tags are added to the ones it already has.
+      const body: DocumentPatch = {
+        folder_id: values.folderId,
+        tags: [...new Set([...d.tags, ...values.tags])],
+      }
+      if (values.date) body.document_date = values.date
+      if (values.typeId) body.type_id = values.typeId
+      if (values.correspondent) body.correspondent = values.correspondent
+      try {
+        await patch.mutateAsync({ id: d.id, patch: body })
+        done++
+      } catch {
+        failed++
+      }
+    }
+    setBulkRunning(false)
+    setBulkValues(null)
+    notifications.show({
+      color: failed ? 'red' : 'prussian',
+      title: failed ? `${failed} could not be filed` : undefined,
+      message: `Filed ${done} document${done === 1 ? '' : 's'}`,
+    })
   }
 
   const fileDocument = async (values: FilingValues, mode: 'save' | 'file', next: number | null) => {
@@ -149,12 +219,99 @@ export function TriagePage() {
       command={command}
       onSave={(values) => void fileDocument(values, 'save', null)}
       onFile={(values) => void fileDocument(values, 'file', nextAfterCurrent)}
+      onDelete={() => setConfirmDelete(true)}
+      bulkCount={items.length}
+      bulkBusy={bulkRunning || queue.hasNextPage}
+      onFileAll={setBulkValues}
     />
+  )
+
+  const bulkModal = (
+    <Modal
+      opened={bulkValues !== null}
+      onClose={() => !bulkRunning && setBulkValues(null)}
+      title={`File ${items.length} document${items.length === 1 ? '' : 's'}?`}
+      centered
+    >
+      <Stack>
+        <Text size="sm">
+          {filtering ? `Every document tagged ${activeTags.join(' + ')}` : 'Every document in the inbox'} will be filed
+          with the details below. Each keeps its own title, and tags are added to the ones it already has.
+        </Text>
+        {bulkValues && (
+          <Stack gap={2}>
+            <Text size="sm">
+              <b>Folder:</b> {folderLabel(folderList.data?.find((f) => f.id === bulkValues.folderId)?.path ?? '')}
+            </Text>
+            {bulkValues.date && (
+              <Text size="sm">
+                <b>Date:</b> {formatDate(bulkValues.date)}
+              </Text>
+            )}
+            {bulkValues.typeId && (
+              <Text size="sm">
+                <b>Type:</b> {typeList.data?.find((t) => t.id === bulkValues.typeId)?.name}
+              </Text>
+            )}
+            {bulkValues.correspondent && (
+              <Text size="sm">
+                <b>Correspondent:</b> {bulkValues.correspondent}
+              </Text>
+            )}
+            {bulkValues.tags.length > 0 && (
+              <Text size="sm">
+                <b>Add tags:</b> {bulkValues.tags.join(', ')}
+              </Text>
+            )}
+          </Stack>
+        )}
+        <Group justify="flex-end">
+          <Button variant="default" onClick={() => setBulkValues(null)} disabled={bulkRunning}>
+            Cancel
+          </Button>
+          <Button loading={bulkRunning} onClick={() => bulkValues && void fileAll(bulkValues)}>
+            File all
+          </Button>
+        </Group>
+      </Stack>
+    </Modal>
+  )
+
+  const deleteModal = (
+    <Modal opened={confirmDelete} onClose={() => setConfirmDelete(false)} title={`Delete No. ${viewDoc.id}?`} centered>
+      <Stack>
+        <Text size="sm">This removes the file and its search entry. The number is not reused. This cannot be undone.</Text>
+        <Group justify="flex-end">
+          <Button variant="default" onClick={() => setConfirmDelete(false)}>
+            Keep it
+          </Button>
+          <Button
+            color="oxide"
+            loading={remove.isPending}
+            onClick={() => {
+              const id = viewDoc.id
+              remove.mutate(id, {
+                onSuccess: () => {
+                  notifications.show({ color: 'prussian', message: `Deleted No. ${id}` })
+                  setConfirmDelete(false)
+                  if (nextAfterCurrent) setParams({ doc: String(nextAfterCurrent) }, { replace: true })
+                  else setParams({}, { replace: true })
+                },
+                onError: (err) => notifications.show({ color: 'red', title: "Couldn't delete", message: errorMessage(err) }),
+              })
+            }}
+          >
+            Delete document
+          </Button>
+        </Group>
+      </Stack>
+    </Modal>
   )
 
   if (isMobile) {
     return (
       <Box className="ax-triage ax-triage-mobile">
+        {filterBar}
         <QueueStepper
           items={items}
           index={index}
@@ -166,12 +323,15 @@ export function TriagePage() {
         />
         <Sheet {...sheetProps} />
         <Box className="ax-sheet-panel">{card}</Box>
+        {deleteModal}
+        {bulkModal}
       </Box>
     )
   }
 
   return (
     <Box className="ax-triage">
+      {filterBar}
       <Box className="ax-queue-col">
         <QueueList items={items} total={total} selectedId={viewDoc.id} onSelect={select} />
       </Box>
@@ -196,7 +356,52 @@ export function TriagePage() {
         <Sheet {...sheetProps} />
       </Box>
       <Box className="ax-card-col">{card}</Box>
+      {deleteModal}
+      {bulkModal}
     </Box>
+  )
+}
+
+/** Top bar: selectable tag pills. A document must carry every selected tag to stay in view. */
+function TagFilterBar({
+  options,
+  value,
+  onChange,
+  shown,
+  total,
+}: {
+  options: [string, number][]
+  value: string[]
+  onChange: (tags: string[]) => void
+  shown: number
+  total: number
+}) {
+  return (
+    <Group className="ax-filterbar" gap="xs" wrap="nowrap" align="flex-start">
+      <Text className="ax-mono ax-accent" size="xs" pt={5} style={{ whiteSpace: 'nowrap' }}>
+        Tags (all of){value.length > 0 ? ` · ${shown} of ${total}` : ''}
+      </Text>
+      {options.length === 0 ? (
+        <Text size="xs" c="dimmed" pt={5}>
+          No tagged documents in the inbox.
+        </Text>
+      ) : (
+        <Chip.Group multiple value={value} onChange={onChange}>
+          <Group gap={6} style={{ flex: 1, minWidth: 0 }}>
+            {options.map(([tag, count]) => (
+              <Chip key={tag} value={tag} size="xs" radius="xl" variant="outline">
+                {tag} · {count}
+              </Chip>
+            ))}
+          </Group>
+        </Chip.Group>
+      )}
+      {value.length > 0 && (
+        <Button variant="subtle" color="gray" size="compact-xs" onClick={() => onChange([])}>
+          Clear
+        </Button>
+      )}
+    </Group>
   )
 }
 
@@ -347,12 +552,20 @@ function FilingCard({
   command,
   onSave,
   onFile,
+  onDelete,
+  bulkCount,
+  bulkBusy,
+  onFileAll,
 }: {
   doc: Document
   disabled: boolean
   command: Command | null
   onSave: (v: FilingValues) => void
   onFile: (v: FilingValues) => void
+  onDelete: () => void
+  bulkCount: number
+  bulkBusy: boolean
+  onFileAll: (v: FilingValues) => void
 }) {
   const folders = useFolders()
   const types = useTypes()
@@ -385,6 +598,14 @@ function FilingCard({
     const v = values()
     if (!v.title || !v.folderId) return
     onFile(v)
+  }
+
+  // The title belongs to each document, so only the folder is required here.
+  const submitFileAll = () => {
+    setAttempted(true)
+    const v = values()
+    if (!v.folderId) return
+    onFileAll(v)
   }
 
   // A card mounted after an earlier command (for example, after J) must not replay it.
@@ -516,8 +737,20 @@ function FilingCard({
         <Button fullWidth onClick={submitFile} disabled={disabled} className="ax-file-btn">
           {disabled ? 'Filed' : 'File document'}
         </Button>
+        <Button
+          fullWidth
+          variant="default"
+          onClick={submitFileAll}
+          disabled={disabled || bulkBusy || bulkCount === 0}
+          title="Apply this folder and these details to every document in the current view. Each keeps its own title."
+        >
+          File all ({bulkCount})
+        </Button>
         <Button fullWidth variant="subtle" color="gray" onClick={() => onSave(values())} disabled={disabled} size="xs">
           Save details
+        </Button>
+        <Button fullWidth variant="subtle" color="oxide" onClick={onDelete} disabled={disabled} size="xs">
+          Delete
         </Button>
       </Stack>
     </Stack>
