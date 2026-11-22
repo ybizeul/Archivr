@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { Badge, Box, Button, Collapse, Group, Pagination, Paper, SegmentedControl, Select, Stack, Table, Text, TextInput, Title, UnstyledButton, Switch, Loader } from '@mantine/core'
+import { Badge, Box, Button, Collapse, Group, Input, Pagination, Paper, SegmentedControl, Select, Stack, Table, Text, TextInput, Title, UnstyledButton, Switch, Loader } from '@mantine/core'
 import { useDebouncedValue, useLocalStorage, useMediaQuery } from '@mantine/hooks'
 import { IconAdjustmentsHorizontal, IconChevronDown, IconChevronUp, IconFolder, IconLayoutGrid, IconList, IconSearch } from '@tabler/icons-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
@@ -181,6 +181,16 @@ export function LibraryPage() {
             className="ax-filter-search"
             placeholder="Search text, titles, tags"
             leftSection={<IconSearch size={16} stroke={1.6} />}
+            rightSection={
+              qText ? (
+                <Input.ClearButton
+                  aria-label="Clear search"
+                  // Keep focus in the field, so clearing leaves the user ready to type a new search.
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => setQText('')}
+                />
+              ) : null
+            }
             value={qText}
             onChange={(e) => setQText(e.currentTarget.value)}
             aria-label="Search documents"
