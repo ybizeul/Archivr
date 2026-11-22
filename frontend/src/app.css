@@ -791,6 +791,17 @@ html[data-mantine-color-scheme='dark'] .mantine-Button-root[data-variant='filled
     top: -4px;
     left: 100%;
     margin-left: -6px;
+    /* Absolutely positioned at left:100% leaves 0px available width, and
+       Mantine's Badge label ellipsizes, so it collapsed to an empty pill. */
+    width: max-content;
+    min-width: 16px;
+    padding-inline: 4px;
+    overflow: visible;
+  }
+
+  .ax-bottomnav-badge .mantine-Badge-label {
+    overflow: visible;
+    text-overflow: clip;
   }
 
   /* Inbox triage: the viewport minus the top and bottom bars. */
