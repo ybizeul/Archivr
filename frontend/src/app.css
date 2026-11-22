@@ -110,13 +110,6 @@ html[data-mantine-color-scheme='dark'] .mantine-Button-root[data-variant='filled
   flex-shrink: 1;
 }
 
-.ax-user-menu .mantine-Button-label {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 0;
-}
-
 @media (min-width: 48em) {
   .ax-user-menu {
     max-width: 11.25rem;
