@@ -1,5 +1,5 @@
-import { useState, type FormEvent } from 'react'
-import { Alert, Button, Center, Divider, Paper, PasswordInput, Stack, Text, TextInput, Title } from '@mantine/core'
+import { useEffect, useState, type FormEvent } from 'react'
+import { Alert, Button, Center, Divider, Loader, Paper, PasswordInput, Stack, Text, TextInput, Title } from '@mantine/core'
 import { useQuery } from '@tanstack/react-query'
 import { Navigate, useLocation } from 'react-router-dom'
 import { api, ApiError } from '../api/client'
@@ -37,9 +37,24 @@ export function LoginPage() {
     queryFn: () => api.get<OIDCStatus>('/auth/oidc/status'),
   })
 
+  const localDisabled = oidc.data?.disable_local_login === true
+  // With local sign-in off, SSO is the only way in, so skip the login page. If the provider just sent us
+  // back with an error, stay here and show it. Redirecting again would loop.
+  const autoSSO = !user && oidc.data?.enabled === true && localDisabled && !oidcCode
+
+  useEffect(() => {
+    if (autoSSO) window.location.assign(`/api/v1/auth/oidc/start?redirect=${encodeURIComponent(from)}`)
+  }, [autoSSO, from])
+
   if (user) return <Navigate to={from} replace />
 
-  const localDisabled = oidc.data?.disable_local_login === true
+  if (autoSSO) {
+    return (
+      <Center mih="100vh" p="md">
+        <Loader aria-label="Redirecting to your sign-in provider" />
+      </Center>
+    )
+  }
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault()
