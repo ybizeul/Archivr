@@ -254,6 +254,8 @@ export function TriagePage() {
       // Added tags are merged into the ones each document already has.
       const body: DocumentPatch = { folder_id: changes.folderId }
       if (changes.documentDate) body.document_date = changes.documentDate
+      // An empty string clears the date on every document, so only an explicit change is sent.
+      if (changes.validUntil !== undefined) body.valid_until = changes.validUntil
       if (changes.type) body.type = changes.type
       if (changes.correspondent) body.correspondent = changes.correspondent
       if (changes.addTags.length > 0) body.tags = [...new Set([...d.tags, ...changes.addTags])]
@@ -281,6 +283,8 @@ export function TriagePage() {
       type: values.type,
       correspondent: values.correspondent,
       tags: values.tags,
+      // Sent only when changed, so an expired document taken out of Trash keeps its date unless it is edited here.
+      valid_until: values.validUntil !== (viewDoc.valid_until ?? '') ? values.validUntil : undefined,
     }
     if (mode === 'file' && values.folderId) body.folder_id = values.folderId
     try {
@@ -344,6 +348,11 @@ export function TriagePage() {
             {bulkValues.documentDate && (
               <Text size="sm">
                 <b>Date:</b> {formatDate(bulkValues.documentDate)}
+              </Text>
+            )}
+            {bulkValues.validUntil && (
+              <Text size="sm">
+                <b>Valid until:</b> {formatDate(bulkValues.validUntil)}
               </Text>
             )}
             {bulkValues.type && (
@@ -733,6 +742,7 @@ function QueueButton({ doc, selected, onSelect }: { doc: Document; selected: boo
 interface FilingValues {
   title: string
   date: string
+  validUntil: string
   type: string
   correspondent: string
   tags: string[]
@@ -743,6 +753,8 @@ interface FilingValues {
 interface BulkChanges {
   folderId: number
   documentDate?: string
+  /** undefined leaves each document's date alone; an empty string clears it. */
+  validUntil?: string
   type?: string
   correspondent?: string
   addTags: string[]
@@ -779,6 +791,7 @@ function FilingCard({
 
   const [title, setTitle] = useState(doc.title)
   const [date, setDate] = useState(doc.document_date ?? '')
+  const [validUntil, setValidUntil] = useState(doc.valid_until ?? '')
   const [typeName, setTypeName] = useState(doc.type?.name ?? '')
   const [correspondent, setCorrespondent] = useState(doc.correspondent)
   const [tags, setTags] = useState<string[]>(doc.tags)
@@ -791,6 +804,7 @@ function FilingCard({
   const values = (): FilingValues => ({
     title: title.trim(),
     date,
+    validUntil,
     type: typeName.trim(),
     correspondent: correspondent.trim(),
     tags,
@@ -813,6 +827,7 @@ function FilingCard({
     onFileAll({
       folderId: v.folderId,
       documentDate: v.date !== (doc.document_date ?? '') ? v.date : undefined,
+      validUntil: v.validUntil !== (doc.valid_until ?? '') ? v.validUntil : undefined,
       type: v.type !== (doc.type?.name ?? '') ? v.type : undefined,
       correspondent: v.correspondent !== doc.correspondent ? v.correspondent : undefined,
       // Tags already on the viewed document are not pushed to the others; only the newly added ones are.
@@ -884,6 +899,17 @@ function FilingCard({
           ))}
         </Group>
       )}
+
+      <DateField
+        label="Valid until"
+        description={
+          validUntil && validUntil < todayISO() ? 'This date has passed.' : 'Optional. Moves to Trash the day after.'
+        }
+        value={validUntil}
+        onValueChange={setValidUntil}
+        disabled={disabled}
+        size="sm"
+      />
 
       <Autocomplete
         label="Type"
