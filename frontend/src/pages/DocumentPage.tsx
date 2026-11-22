@@ -3,8 +3,8 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Alert, Anchor, Autocomplete, Badge, Box, Button, CopyButton, Group, Loader, ScrollArea, Select, Stack, TagsInput, Text, TextInput, Title, ActionIcon, Tooltip } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
 import { notifications } from '@mantine/notifications'
-import { IconArrowLeft, IconCopy, IconCheck, IconShare } from '@tabler/icons-react'
-import { useCorrespondents, useDocument, useFolders, usePatchDocument, useReOCR, useTags, useTypes } from '../api/queries'
+import { IconArrowLeft, IconChevronLeft, IconChevronRight, IconCopy, IconCheck, IconShare } from '@tabler/icons-react'
+import { useCorrespondents, useDocument, useDocuments, useFolders, usePatchDocument, useReOCR, useTags, useTypes } from '../api/queries'
 import type { DocumentDetail } from '../api/types'
 import { DateField } from '../components/DateField'
 import { DeleteDocumentDialog } from '../components/DeleteDocumentDialog'
@@ -75,8 +75,49 @@ export function DocumentPage() {
   )
 }
 
+const NEIGHBOUR_WINDOW = 200
+
+/**
+ * The documents before and after this one in the list the user came from (same folder, filters and
+ * sort as the remembered Library address). If the document is not in that list, its own folder is used.
+ */
+function useNeighbours(doc: DocumentDetail, libraryLocation: string) {
+  const params = new URLSearchParams(libraryLocation.split('?')[1] ?? '')
+  const folder = Number(params.get('folder')) || undefined
+  const q = params.get('q') ?? ''
+  const page = Math.max(1, Number(params.get('page')) || 1)
+
+  const remembered = useDocuments({
+    q: q || undefined,
+    folder,
+    subtree: folder !== undefined && params.get('subtree') !== '0',
+    type: Number(params.get('type')) || undefined,
+    tag: params.get('tag') || undefined,
+    from: params.get('from') || undefined,
+    to: params.get('to') || undefined,
+    ocr: params.get('ocr') || undefined,
+    sort: params.get('sort') || (q ? 'relevance' : undefined),
+    limit: NEIGHBOUR_WINDOW,
+    // Centre the window on the page the user was looking at.
+    offset: Math.max(0, (page - 1) * 50 - NEIGHBOUR_WINDOW / 4),
+  })
+  const inRemembered = remembered.data?.items.some((d) => d.id === doc.id) ?? false
+  const useFallback = remembered.isSuccess && !inRemembered
+
+  const fallback = useDocuments(
+    { folder: doc.folder_id, subtree: false, limit: NEIGHBOUR_WINDOW },
+    { enabled: useFallback },
+  )
+
+  const items = (useFallback ? fallback.data?.items : remembered.data?.items) ?? []
+  const index = items.findIndex((d) => d.id === doc.id)
+  if (index < 0) return { prev: undefined, next: undefined }
+  return { prev: items[index - 1], next: items[index + 1] }
+}
+
 function DocumentView({ doc, libraryLocation }: { doc: DocumentDetail; libraryLocation: string }) {
   const navigate = useNavigate()
+  const { prev, next } = useNeighbours(doc, libraryLocation)
   const folders = useFolders()
   const types = useTypes()
   const correspondents = useCorrespondents()
@@ -136,12 +177,38 @@ function DocumentView({ doc, libraryLocation }: { doc: DocumentDetail; libraryLo
   return (
     <Box className="ax-detail">
       <Group justify="space-between" mb="md" wrap="nowrap">
-        <Anchor component={Link} to={libraryLocation} size="sm" className="ax-back">
-          <Group gap={6} wrap="nowrap">
-            <IconArrowLeft size={16} stroke={1.6} />
-            Library
+        <Group gap="md" wrap="nowrap">
+          <Anchor component={Link} to={libraryLocation} size="sm" className="ax-back">
+            <Group gap={6} wrap="nowrap">
+              <IconArrowLeft size={16} stroke={1.6} />
+              Library
+            </Group>
+          </Anchor>
+          <Group gap={4} wrap="nowrap">
+            <Tooltip label={prev ? `Previous: ${prev.title}` : 'No previous document'} openDelay={300}>
+              <ActionIcon
+                variant="default"
+                size="sm"
+                aria-label="Previous document"
+                disabled={!prev}
+                onClick={() => prev && navigate(`/documents/${prev.id}`)}
+              >
+                <IconChevronLeft size={16} stroke={1.6} />
+              </ActionIcon>
+            </Tooltip>
+            <Tooltip label={next ? `Next: ${next.title}` : 'No next document'} openDelay={300}>
+              <ActionIcon
+                variant="default"
+                size="sm"
+                aria-label="Next document"
+                disabled={!next}
+                onClick={() => next && navigate(`/documents/${next.id}`)}
+              >
+                <IconChevronRight size={16} stroke={1.6} />
+              </ActionIcon>
+            </Tooltip>
           </Group>
-        </Anchor>
+        </Group>
         <Group gap="xs" wrap="nowrap">
           <Button
             variant="default"
