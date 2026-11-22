@@ -4,7 +4,7 @@ import { notifications } from '@mantine/notifications'
 import { IconDots, IconFolder, IconFolderOpen, IconPlus, IconTrash } from '@tabler/icons-react'
 import { useFolderMutations, useFolders } from '../api/queries'
 import type { Folder } from '../api/types'
-import { errorMessage, folderName, isTrash } from '../lib/format'
+import { errorMessage, folderLabel, folderName, isTrash } from '../lib/format'
 
 interface FolderTreeProps {
   selected?: number
@@ -38,6 +38,7 @@ export function FolderTree({ selected, onSelect }: FolderTreeProps) {
   const tree = useMemo(() => buildTree((folders.data ?? []).filter((f) => !isTrash(f))), [folders.data])
   const [creating, setCreating] = useState<{ parent?: number } | null>(null)
   const [renaming, setRenaming] = useState<Folder | null>(null)
+  const [moving, setMoving] = useState<Folder | null>(null)
   const [deleting, setDeleting] = useState<Folder | null>(null)
 
   const renderNode = (node: Node, depth: number) => {
@@ -69,6 +70,7 @@ export function FolderTree({ selected, onSelect }: FolderTreeProps) {
               <Menu.Dropdown>
                 <Menu.Item onClick={() => setCreating({ parent: f.id })}>New subfolder</Menu.Item>
                 <Menu.Item onClick={() => setRenaming(f)}>Rename</Menu.Item>
+                <Menu.Item onClick={() => setMoving(f)}>Move</Menu.Item>
                 <Menu.Divider />
                 <Menu.Item color="red" onClick={() => setDeleting(f)}>
                   Delete
@@ -137,6 +139,7 @@ export function FolderTree({ selected, onSelect }: FolderTreeProps) {
         }}
       />
       {renaming && <FolderRename key={renaming.id} folder={renaming} onClose={() => setRenaming(null)} />}
+      {moving && <FolderMove key={moving.id} folder={moving} folders={all} onClose={() => setMoving(null)} />}
       <FolderDelete folder={deleting} onClose={() => setDeleting(null)} onDeleted={() => onSelect(undefined)} />
     </Stack>
   )
@@ -266,6 +269,67 @@ function FolderRename({ folder, onClose }: { folder: Folder | null; onClose: () 
           </Button>
           <Button onClick={save} loading={update.isPending}>
             Rename
+          </Button>
+        </Group>
+      </Stack>
+    </Modal>
+  )
+}
+
+function FolderMove({ folder, folders, onClose }: { folder: Folder; folders: Folder[]; onClose: () => void }) {
+  const { update } = useFolderMutations()
+  const [parent, setParent] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  // A folder cannot sit inside itself or one of its subfolders. The server refuses that too.
+  const underThis = (f: Folder) => f.path === folder.path || f.path.startsWith(`${folder.path}/`)
+  const destinations = folders
+    .filter((f) => !f.is_system && !underThis(f))
+    .slice()
+    .sort((a, b) => a.path.localeCompare(b.path, undefined, { sensitivity: 'base' }))
+    .map((f) => ({ value: String(f.id), label: folderLabel(f.path) }))
+
+  const current = folder.parent_id === null ? '' : String(folder.parent_id)
+  const chosen = parent ?? current
+
+  const save = () => {
+    update.mutate(
+      { id: folder.id, parent_id: chosen === '' ? 0 : Number(chosen) },
+      {
+        onSuccess: () => {
+          notifications.show({ color: 'prussian', message: `Moved ${folder.name}` })
+          onClose()
+        },
+        onError: (err) => setError(errorMessage(err)),
+      },
+    )
+  }
+
+  return (
+    <Modal opened onClose={onClose} title={`Move ${folder.name}`} centered>
+      <Stack>
+        <Select
+          label="Inside"
+          data={[{ value: '', label: 'Top level' }, ...destinations]}
+          value={chosen}
+          onChange={(v) => {
+            setParent(v ?? '')
+            setError(null)
+          }}
+          allowDeselect={false}
+          searchable
+          comboboxProps={{ withinPortal: true }}
+          error={error}
+        />
+        <Text size="xs" c="dimmed">
+          The folder and everything in it move together. Documents keep their numbers.
+        </Text>
+        <Group justify="flex-end">
+          <Button variant="default" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button onClick={save} loading={update.isPending} disabled={chosen === current}>
+            Move folder
           </Button>
         </Group>
       </Stack>
