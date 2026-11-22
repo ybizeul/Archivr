@@ -30,6 +30,46 @@ interface Command {
   at: number
 }
 
+/** A document with no type, or no correspondent. A private-use character, so it cannot collide with a real name. */
+const UNSET = '\uE000'
+
+function typeKey(d: Document): string {
+  return d.type?.name.trim() || UNSET
+}
+
+function correspondentKey(d: Document): string {
+  return d.correspondent.trim() || UNSET
+}
+
+function fieldLabel(key: string, unsetLabel: string): string {
+  return key === UNSET ? unsetLabel : key
+}
+
+function tally(docs: Document[], keyOf: (d: Document) => string): Map<string, number> {
+  const counts = new Map<string, number>()
+  for (const d of docs) counts.set(keyOf(d), (counts.get(keyOf(d)) ?? 0) + 1)
+  return counts
+}
+
+/** Most-used values first. The current choice stays even when the other filters leave it with nothing. */
+function fieldOptions(counts: Map<string, number>, selected: string | null, unsetLabel: string) {
+  const entries = [...counts.entries()]
+  if (selected !== null && !counts.has(selected)) entries.push([selected, 0])
+  entries.sort((a, b) => b[1] - a[1] || fieldLabel(a[0], unsetLabel).localeCompare(fieldLabel(b[0], unsetLabel)))
+  return entries.map(([key, count]) => ({
+    value: key,
+    label: `${fieldLabel(key, unsetLabel)} · ${count}`,
+  }))
+}
+
+function viewLabel(type: string | null, correspondent: string | null, tags: string[]): string {
+  const parts: string[] = []
+  if (type !== null) parts.push(type === UNSET ? 'no type' : `type ${type}`)
+  if (correspondent !== null) parts.push(correspondent === UNSET ? 'no correspondent' : `correspondent ${correspondent}`)
+  if (tags.length > 0) parts.push(`tagged ${tags.join(' + ')}`)
+  return parts.join(', ')
+}
+
 export function TriagePage() {
   const [params, setParams] = useSearchParams()
   const isMobile = useMediaQuery('(max-width: 767px)', undefined, { getInitialValueInEffect: false }) ?? false
@@ -45,7 +85,9 @@ export function TriagePage() {
     if (hasNextPage && !isFetchingNextPage && !isFetchNextPageError) void fetchNextPage()
   }, [hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage])
 
-  // Tag filter: a document stays in the view only if it carries every selected tag (AND).
+  // A document stays in the view only when it matches the type, the correspondent, and every selected tag.
+  const [typeFilter, setTypeFilter] = useState<string | null>(null)
+  const [correspondentFilter, setCorrespondentFilter] = useState<string | null>(null)
   const [selectedTags, setSelectedTags] = useState<string[]>([])
   const [bulkValues, setBulkValues] = useState<BulkChanges | null>(null)
   const [bulkRunning, setBulkRunning] = useState(false)
@@ -53,12 +95,35 @@ export function TriagePage() {
 
   const allItems = queue.items
   const knownTags = new Set<string>()
-  for (const d of allItems) for (const t of d.tags) knownTags.add(t)
-  // A tag drops out of the filter once no inbox document carries it any more.
+  const knownTypes = new Set<string>()
+  const knownCorrespondents = new Set<string>()
+  for (const d of allItems) {
+    for (const t of d.tags) knownTags.add(t)
+    knownTypes.add(typeKey(d))
+    knownCorrespondents.add(correspondentKey(d))
+  }
+  // A value drops out once no inbox document has it any more. The choice is remembered if one comes back.
   const activeTags = selectedTags.filter((t) => knownTags.has(t))
-  const filtering = activeTags.length > 0
-  const items = filtering ? allItems.filter((d) => activeTags.every((t) => d.tags.includes(t))) : allItems
-  // Each pill counts the documents in the current view (those carrying every selected tag) that carry it.
+  const activeType = typeFilter !== null && knownTypes.has(typeFilter) ? typeFilter : null
+  const activeCorrespondent = correspondentFilter !== null && knownCorrespondents.has(correspondentFilter) ? correspondentFilter : null
+  const matchesType = (d: Document) => activeType === null || typeKey(d) === activeType
+  const matchesCorrespondent = (d: Document) => activeCorrespondent === null || correspondentKey(d) === activeCorrespondent
+  const matchesTags = (d: Document) => activeTags.every((t) => d.tags.includes(t))
+  const filtering = activeType !== null || activeCorrespondent !== null || activeTags.length > 0
+  const items = filtering ? allItems.filter((d) => matchesType(d) && matchesCorrespondent(d) && matchesTags(d)) : allItems
+  // Each control counts documents that match the other filters, so the numbers stay useful as the view narrows.
+  // A selected value with nothing left under it stays, so it can be cleared.
+  const typeOptions = fieldOptions(
+    tally(allItems.filter((d) => matchesCorrespondent(d) && matchesTags(d)), typeKey),
+    activeType,
+    'No type',
+  )
+  const correspondentOptions = fieldOptions(
+    tally(allItems.filter((d) => matchesType(d) && matchesTags(d)), correspondentKey),
+    activeCorrespondent,
+    'No correspondent',
+  )
+  // Each pill counts the documents in the current view that carry it.
   // Tags no document in the view carries are left out; selected tags always stay so they can be unselected.
   const tagCounts = new Map<string, number>()
   for (const d of items) for (const t of d.tags) tagCounts.set(t, (tagCounts.get(t) ?? 0) + 1)
@@ -66,6 +131,11 @@ export function TriagePage() {
   // Most-used tags first; ties fall back to name.
   const tagOptions = [...tagCounts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
   const total = filtering ? items.length : queue.total
+  const clearFilters = () => {
+    setTypeFilter(null)
+    setCorrespondentFilter(null)
+    setSelectedTags([])
+  }
   const selectedId = Number(params.get('doc')) || 0
   const index = Math.max(0, items.findIndex((d) => d.id === selectedId))
   const current: Document | undefined = items[index]
@@ -135,12 +205,19 @@ export function TriagePage() {
   }
 
   const filterBar = (
-    <TagFilterBar
-      options={tagOptions}
-      value={activeTags}
-      onChange={setSelectedTags}
+    <InboxFilterBar
+      typeOptions={typeOptions}
+      type={activeType}
+      onType={setTypeFilter}
+      correspondentOptions={correspondentOptions}
+      correspondent={activeCorrespondent}
+      onCorrespondent={setCorrespondentFilter}
+      tagOptions={tagOptions}
+      tags={activeTags}
+      onTags={setSelectedTags}
       shown={items.length}
       total={allItems.length}
+      onClear={clearFilters}
     />
   )
 
@@ -149,7 +226,7 @@ export function TriagePage() {
       <Box>
         {filterBar}
         <Text c="dimmed" p="xl">
-          No inbox document carries all of these tags.
+          No inbox document matches these filters.
         </Text>
       </Box>
     )
@@ -237,7 +314,7 @@ export function TriagePage() {
     >
       <Stack>
         <Text size="sm">
-          {filtering ? `Every document tagged ${activeTags.join(' + ')}` : 'Every document in the inbox'} will be filed
+          {filtering ? `Every document matching ${viewLabel(activeType, activeCorrespondent, activeTags)}` : 'Every document in the inbox'} will be filed
           with the folder and the fields you changed below. Each keeps its own title, and added tags are merged with its existing ones.
         </Text>
         {bulkValues && (
@@ -364,46 +441,94 @@ export function TriagePage() {
   )
 }
 
-/** Top bar: selectable tag pills. A document must carry every selected tag to stay in view. */
-function TagFilterBar({
-  options,
-  value,
-  onChange,
+/** Top bar: type, correspondent, and tags. All three apply together. */
+function InboxFilterBar({
+  typeOptions,
+  type,
+  onType,
+  correspondentOptions,
+  correspondent,
+  onCorrespondent,
+  tagOptions,
+  tags,
+  onTags,
   shown,
   total,
+  onClear,
 }: {
-  options: [string, number][]
-  value: string[]
-  onChange: (tags: string[]) => void
+  typeOptions: { value: string; label: string }[]
+  type: string | null
+  onType: (value: string | null) => void
+  correspondentOptions: { value: string; label: string }[]
+  correspondent: string | null
+  onCorrespondent: (value: string | null) => void
+  tagOptions: [string, number][]
+  tags: string[]
+  onTags: (tags: string[]) => void
   shown: number
   total: number
+  onClear: () => void
 }) {
+  const filtering = type !== null || correspondent !== null || tags.length > 0
   return (
-    <Group className="ax-filterbar" gap="xs" wrap="nowrap" align="flex-start">
-      <Text className="ax-mono ax-accent" size="xs" pt={5} style={{ whiteSpace: 'nowrap' }}>
-        Tags (all of){value.length > 0 ? ` · ${shown} of ${total}` : ''}
-      </Text>
-      {options.length === 0 ? (
-        <Text size="xs" c="dimmed" pt={5}>
-          No tagged documents in the inbox.
+    <Box className="ax-filterbar">
+      <Group className="ax-filter-fields" gap="xs" wrap="wrap" align="center">
+        <Select
+          className="ax-filter-select"
+          aria-label="Type"
+          placeholder="All types"
+          data={typeOptions}
+          value={type}
+          onChange={onType}
+          clearable
+          searchable
+          size="xs"
+          nothingFoundMessage="No types in this view."
+        />
+        <Select
+          className="ax-filter-select"
+          aria-label="Correspondent"
+          placeholder="All correspondents"
+          data={correspondentOptions}
+          value={correspondent}
+          onChange={onCorrespondent}
+          clearable
+          searchable
+          size="xs"
+          nothingFoundMessage="No correspondents in this view."
+        />
+        {filtering && (
+          <Text className="ax-mono ax-accent" size="xs" style={{ whiteSpace: 'nowrap' }}>
+            {shown} of {total}
+          </Text>
+        )}
+        {filtering && (
+          <Button variant="subtle" color="gray" size="compact-xs" onClick={onClear}>
+            Clear
+          </Button>
+        )}
+      </Group>
+      <Group gap="xs" wrap="nowrap" align="flex-start">
+        <Text className="ax-mono ax-accent" size="xs" pt={5} style={{ whiteSpace: 'nowrap' }}>
+          Tags (all of)
         </Text>
-      ) : (
-        <Chip.Group multiple value={value} onChange={onChange}>
-          <Group gap={6} style={{ flex: 1, minWidth: 0 }}>
-            {options.map(([tag, count]) => (
-              <Chip key={tag} value={tag} size="xs" radius="xl" variant="outline">
-                {tag} · {count}
-              </Chip>
-            ))}
-          </Group>
-        </Chip.Group>
-      )}
-      {value.length > 0 && (
-        <Button variant="subtle" color="gray" size="compact-xs" onClick={() => onChange([])}>
-          Clear
-        </Button>
-      )}
-    </Group>
+        {tagOptions.length === 0 ? (
+          <Text size="xs" c="dimmed" pt={5}>
+            No tagged documents in this view.
+          </Text>
+        ) : (
+          <Chip.Group multiple value={tags} onChange={onTags}>
+            <Group gap={6} style={{ flex: 1, minWidth: 0 }}>
+              {tagOptions.map(([tag, count]) => (
+                <Chip key={tag} value={tag} size="xs" radius="xl" variant="outline">
+                  {tag} · {count}
+                </Chip>
+              ))}
+            </Group>
+          </Chip.Group>
+        )}
+      </Group>
+    </Box>
   )
 }
 
