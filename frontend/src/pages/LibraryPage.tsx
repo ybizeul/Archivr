@@ -50,7 +50,7 @@ export function LibraryPage() {
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [emptyTrashOpen, setEmptyTrashOpen] = useState(false)
   // The chosen layout is a personal preference, so it is remembered in this browser rather than the URL.
-  const [view, setView] = useLocalStorage<LibraryView>({ key: 'archivr-library-view', defaultValue: 'list' })
+  const [view, setView] = useLocalStorage<LibraryView>({ key: 'archivr-library-view', defaultValue: 'grid' })
 
   const folder = Number(params.get('folder')) || undefined
   const q = params.get('q') ?? ''
@@ -169,8 +169,8 @@ export function LibraryPage() {
               onChange={(v) => setView(v as LibraryView)}
               aria-label="Library view"
               data={[
-                { value: 'list', label: <ViewLabel icon={<IconList size={16} stroke={1.6} />} text="List" /> },
                 { value: 'grid', label: <ViewLabel icon={<IconLayoutGrid size={16} stroke={1.6} />} text="Cards" /> },
+                { value: 'list', label: <ViewLabel icon={<IconList size={16} stroke={1.6} />} text="List" /> },
               ]}
             />
           </Group>
