@@ -25,6 +25,10 @@ import (
 // Side is the longest edge of a thumbnail, in pixels.
 const Side = 480
 
+// version is part of the cache file name. Bump it when the rendering changes, so thumbnails
+// made by an older version are not reused. Version 2 renders the PDF's crop box, as Preview does.
+const version = 2
+
 // ErrUnavailable means no thumbnail can be made, for example because poppler is missing.
 var ErrUnavailable = errors.New("thumbnail unavailable")
 
@@ -39,7 +43,7 @@ func (c *Cache) Thumbnail(ctx context.Context, sha, src, mime string) (string, e
 	if len(sha) < 2 {
 		return "", fmt.Errorf("bad hash")
 	}
-	dst := filepath.Join(c.Dir, sha[:2], fmt.Sprintf("%s-%d.jpg", sha, Side))
+	dst := filepath.Join(c.Dir, sha[:2], fmt.Sprintf("%s-%d-v%d.jpg", sha, Side, version))
 	if _, err := os.Stat(dst); err == nil {
 		return dst, nil
 	}
@@ -74,8 +78,10 @@ func (c *Cache) renderPDF(ctx context.Context, src, dst string) error {
 	}
 	// pdftoppm appends the extension to the prefix, so write to a prefix and rename.
 	prefix := dst + "-page"
+	// -cropbox renders the crop box that Preview writes when a PDF is cropped. Without it
+	// poppler renders the full media box, and a cropped PDF looks unchanged.
 	cmd := exec.CommandContext(ctx, c.Pdftoppm,
-		"-f", "1", "-l", "1", "-jpeg", "-singlefile",
+		"-f", "1", "-l", "1", "-jpeg", "-singlefile", "-cropbox",
 		"-scale-to", fmt.Sprint(Side), src, prefix)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("pdftoppm: %v: %s", err, out)

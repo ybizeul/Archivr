@@ -5,8 +5,10 @@ import (
 	"errors"
 	"image"
 	"image/color"
+	_ "image/jpeg"
 	"image/png"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 )
@@ -68,6 +70,36 @@ func TestPDFThumbnailNeedsPoppler(t *testing.T) {
 	_, err := c.Thumbnail(context.Background(), "abcdef", "x.pdf", "application/pdf")
 	if !errors.Is(err, ErrUnavailable) {
 		t.Fatalf("err = %v, want ErrUnavailable", err)
+	}
+}
+
+// testdata/cropped.pdf has a 400x400 media box and a 200x200 crop box. The crop box holds only
+// red, so a thumbnail that honours it is red everywhere; one that ignores it shows white corners.
+func TestPDFThumbnailShowsTheCropBox(t *testing.T) {
+	pdftoppm, err := exec.LookPath("pdftoppm")
+	if err != nil {
+		t.Skip("poppler-utils is not installed")
+	}
+	c := &Cache{Dir: t.TempDir(), Pdftoppm: pdftoppm}
+	out, err := c.Thumbnail(context.Background(), "abcdef12", filepath.Join("testdata", "cropped.pdf"), "application/pdf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.Open(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	img, _, err := image.Decode(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := img.Bounds()
+	for _, p := range [][2]int{{b.Min.X + 5, b.Min.Y + 5}, {b.Max.X - 6, b.Max.Y - 6}, {b.Min.X + b.Dx()/2, b.Min.Y + b.Dy()/2}} {
+		r, g, bl, _ := img.At(p[0], p[1]).RGBA()
+		if r>>8 < 200 || g>>8 > 80 || bl>>8 > 80 {
+			t.Fatalf("pixel %v = (%d,%d,%d), want red: the crop box was not rendered", p, r>>8, g>>8, bl>>8)
+		}
 	}
 }
 
