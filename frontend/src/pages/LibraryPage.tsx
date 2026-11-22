@@ -9,7 +9,7 @@ import { DateField } from '../components/DateField'
 import { FolderTree } from '../components/FolderTree'
 import { Snippet } from '../components/Snippet'
 import { UploadButton } from '../components/UploadButton'
-import { accession, formatDate, folderLabel, OCR_LABEL } from '../lib/format'
+import { accession, formatDate, folderLabel, folderTitle, OCR_LABEL } from '../lib/format'
 
 const PAGE_SIZE = 50
 
@@ -103,7 +103,7 @@ export function LibraryPage() {
   const tags = useTags()
 
   const currentFolder = folders.data?.find((f) => f.id === folder)
-  const title = q ? `Results for “${q}”` : currentFolder ? (currentFolder.is_system ? 'Inbox' : folderLabel(currentFolder.path)) : 'All documents'
+  const title = q ? `Results for “${q}”` : currentFolder ? (folderTitle(currentFolder)) : 'All documents'
   const activeFilters = [type, from, to, ocr, sort].filter(Boolean).length
   const pages = Math.max(1, Math.ceil((docs.data?.total ?? 0) / PAGE_SIZE))
 
@@ -121,7 +121,7 @@ export function LibraryPage() {
             aria-expanded={browseOpen}
             className="ax-collapse-toggle"
           >
-            Folders: {currentFolder ? (currentFolder.is_system ? 'Inbox' : folderLabel(currentFolder.path)) : 'all'}
+            Folders: {currentFolder ? (folderTitle(currentFolder)) : 'all'}
             {tag ? ` · #${tag}` : ''}
           </Button>
         )}

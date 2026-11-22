@@ -31,6 +31,9 @@ func sha256Hex(data []byte) string {
 // InboxID is the system INBOX folder. New documents land there.
 const InboxID int64 = 1
 
+// TrashName is the name of the system folder that holds expired documents.
+const TrashName = "Trash"
+
 // ErrInvalid marks input the caller must correct. Handlers answer it with 400.
 var ErrInvalid = errors.New("invalid")
 
@@ -69,6 +72,9 @@ type NewDocument struct {
 	Mime          string
 	Source        string
 	SourceRef     string
+	// ValidUntil is the last day the document is valid, YYYY-MM-DD. Once it has passed the
+	// document is moved into the Trash folder. Nil or empty means it never expires.
+	ValidUntil *string
 }
 
 // Patch is a partial update. A nil field is left unchanged.
@@ -87,6 +93,9 @@ type Patch struct {
 	// Rotation is how the browser turns the document, in degrees clockwise: 0, 90, 180 or 270.
 	// It is display metadata. The file on disk is never changed.
 	Rotation *int `json:"rotation"`
+	// ValidUntil is the last day the document is valid, YYYY-MM-DD. An empty string clears it.
+	// Moving a document out of Trash after it expired clears the date, unless the same patch sets one.
+	ValidUntil *string `json:"valid_until"`
 }
 
 var dateRe = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
@@ -98,6 +107,18 @@ func ValidDate(s string) bool {
 	}
 	_, err := time.Parse("2006-01-02", s)
 	return err == nil
+}
+
+// cleanValidUntil turns an optional date into the stored form: nil when there is none.
+func cleanValidUntil(v *string) (*string, error) {
+	if v == nil || *v == "" {
+		return nil, nil
+	}
+	if !ValidDate(*v) {
+		return nil, invalid("valid until must be YYYY-MM-DD")
+	}
+	d := *v
+	return &d, nil
 }
 
 const maxCorrespondentRunes = 200
@@ -149,6 +170,10 @@ func (s *Service) Create(ctx context.Context, in NewDocument) (store.Document, e
 		return store.Document{}, invalid("document date must be YYYY-MM-DD")
 	}
 	correspondent, err := cleanCorrespondent(in.Correspondent)
+	if err != nil {
+		return store.Document{}, err
+	}
+	validUntil, err := cleanValidUntil(in.ValidUntil)
 	if err != nil {
 		return store.Document{}, err
 	}
@@ -204,6 +229,7 @@ func (s *Service) Create(ctx context.Context, in NewDocument) (store.Document, e
 			FolderID:        folder.ID,
 			Filename:        filename,
 			Rotation:        0,
+			ValidUntil:      validUntil,
 		})
 		if err != nil {
 			return err
@@ -234,6 +260,10 @@ func (s *Service) Create(ctx context.Context, in NewDocument) (store.Document, e
 	return out, nil
 }
 
+func (s *Service) today() string {
+	return s.now().Format("2006-01-02")
+}
+
 // Update changes a document's metadata. A title, folder or type change may rename
 // or move the file, and the move is undone if the database update fails.
 func (s *Service) Update(ctx context.Context, id int64, p Patch) (store.Document, error) {
@@ -251,6 +281,12 @@ func (s *Service) Update(ctx context.Context, id int64, p Patch) (store.Document
 			CorrespondentID: cur.CorrespondentID,
 			FolderID:        cur.FolderID,
 			Rotation:        cur.Rotation,
+			ValidUntil:      cur.ValidUntil,
+		}
+		if p.ValidUntil != nil {
+			if f.ValidUntil, err = cleanValidUntil(p.ValidUntil); err != nil {
+				return err
+			}
 		}
 		if p.Rotation != nil {
 			switch *p.Rotation {
@@ -322,6 +358,12 @@ func (s *Service) Update(ctx context.Context, id int64, p Patch) (store.Document
 		folder, err := tx.FolderByID(ctx, f.FolderID)
 		if err != nil {
 			return err
+		}
+		// Taking an expired document out of Trash keeps it: without this the next sweep
+		// would put it straight back.
+		if p.ValidUntil == nil && cur.FolderID != f.FolderID && strings.EqualFold(cur.Folder.Path, TrashName) &&
+			f.ValidUntil != nil && *f.ValidUntil < s.today() {
+			f.ValidUntil = nil
 		}
 
 		f.Filename = storage.DocumentFilename(id, f.Title, storage.ExtFor(cur.Mime))
@@ -415,6 +457,7 @@ func (s *Service) writeSidecar(d store.Document) {
 		SHA256:        d.SHA256,
 		Mime:          d.Mime,
 		Rotation:      d.Rotation,
+		ValidUntil:    d.ValidUntil,
 		CreatedAt:     d.CreatedAt,
 		UpdatedAt:     d.UpdatedAt,
 	}
@@ -440,6 +483,7 @@ type sidecar struct {
 	SHA256        string   `json:"sha256"`
 	Mime          string   `json:"mime"`
 	Rotation      int      `json:"rotation"`
+	ValidUntil    *string  `json:"valid_until"`
 	CreatedAt     string   `json:"created_at"`
 	UpdatedAt     string   `json:"updated_at"`
 }

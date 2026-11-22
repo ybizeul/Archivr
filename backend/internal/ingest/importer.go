@@ -37,6 +37,7 @@ type Candidate struct {
 	Correspondent string   // optional
 	Tags          []string // optional
 	FolderID      int64    // 0 files into INBOX
+	ValidUntil    *string  // optional last valid day, YYYY-MM-DD; the document is trashed after it
 	Data          []byte
 }
 
@@ -98,6 +99,7 @@ func (im *Importer) Import(ctx context.Context, c Candidate) (Result, error) {
 		Mime:          mime,
 		Source:        c.Source,
 		SourceRef:     c.SourceRef,
+		ValidUntil:    c.ValidUntil,
 	})
 	var dup *archive.DuplicateError
 	if errors.As(err, &dup) {

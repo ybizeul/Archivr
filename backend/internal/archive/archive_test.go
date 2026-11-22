@@ -398,3 +398,92 @@ func TestValidDate(t *testing.T) {
 		}
 	}
 }
+
+func TestExpiredDocumentsMoveToTrash(t *testing.T) {
+	svc, st, layout := newService(t)
+	ctx := context.Background()
+	now := time.Date(2026, 11, 22, 9, 0, 0, 0, time.Local)
+	svc.Now = func() time.Time { return now }
+
+	mk := func(label string, validUntil *string) store.Document {
+		doc, err := svc.Create(ctx, NewDocument{
+			Title: label, Data: pdfBytes(label), Mime: "application/pdf", Source: "upload", ValidUntil: validUntil,
+		})
+		if err != nil {
+			t.Fatalf("create %q: %v", label, err)
+		}
+		return doc
+	}
+	past, today, future := "2026-11-21", "2026-11-22", "2027-01-01"
+	expired := mk("expired", &past)
+	lastDay := mk("last day", &today)
+	later := mk("later", &future)
+	forever := mk("forever", nil)
+
+	if expired.ValidUntil == nil || *expired.ValidUntil != past {
+		t.Fatalf("valid_until not stored: %v", expired.ValidUntil)
+	}
+	if _, err := svc.Create(ctx, NewDocument{Title: "bad", Data: pdfBytes("bad"), Mime: "application/pdf",
+		Source: "upload", ValidUntil: strPtr("tomorrow")}); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("bad date error = %v, want ErrInvalid", err)
+	}
+
+	n, err := svc.ExpireDocuments(ctx)
+	if err != nil || n != 1 {
+		t.Fatalf("ExpireDocuments = %d, %v; want 1, nil", n, err)
+	}
+	trash, err := st.FolderByPath(ctx, TrashName)
+	if err != nil || !trash.IsSystem {
+		t.Fatalf("trash folder = %+v, %v", trash, err)
+	}
+	got, _ := st.GetDocument(ctx, expired.ID)
+	if got.FolderID != trash.ID {
+		t.Fatalf("expired document is in folder %d, want trash %d", got.FolderID, trash.ID)
+	}
+	if !exists(t, mustFile(t, layout, "Trash", got.Filename)) {
+		t.Fatal("file did not move into the Trash folder")
+	}
+	for _, d := range []store.Document{lastDay, later, forever} {
+		cur, _ := st.GetDocument(ctx, d.ID)
+		if cur.FolderID != InboxID {
+			t.Errorf("%q moved to folder %d but has not expired", d.Title, cur.FolderID)
+		}
+	}
+	if n, _ := svc.ExpireDocuments(ctx); n != 0 {
+		t.Fatalf("second sweep moved %d documents, want 0", n)
+	}
+
+	// The day after the last valid day, it goes too.
+	now = now.AddDate(0, 0, 1)
+	if n, _ := svc.ExpireDocuments(ctx); n != 1 {
+		t.Fatalf("next-day sweep moved %d, want 1", n)
+	}
+
+	// Restoring an expired document clears its date, so it is not trashed again.
+	home := int64(InboxID)
+	restored, err := svc.Update(ctx, expired.ID, Patch{FolderID: &home})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if restored.ValidUntil != nil {
+		t.Fatalf("valid_until after restore = %v, want cleared", *restored.ValidUntil)
+	}
+	if n, _ := svc.ExpireDocuments(ctx); n != 0 {
+		t.Fatalf("sweep re-trashed a restored document (%d)", n)
+	}
+
+	// The date can be changed and cleared.
+	set, err := svc.Update(ctx, later.ID, Patch{ValidUntil: strPtr("2030-05-06")})
+	if err != nil || set.ValidUntil == nil || *set.ValidUntil != "2030-05-06" {
+		t.Fatalf("set valid_until = %v, %v", set.ValidUntil, err)
+	}
+	cleared, err := svc.Update(ctx, later.ID, Patch{ValidUntil: strPtr("")})
+	if err != nil || cleared.ValidUntil != nil {
+		t.Fatalf("clear valid_until = %v, %v", cleared.ValidUntil, err)
+	}
+	if _, err := svc.Update(ctx, later.ID, Patch{ValidUntil: strPtr("soon")}); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("bad date error = %v, want ErrInvalid", err)
+	}
+}
+
+func strPtr(s string) *string { return &s }

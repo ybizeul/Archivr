@@ -9,7 +9,7 @@ import { DateField } from '../components/DateField'
 import { DocViewer } from '../components/DocViewer'
 import { ShareDialog } from '../components/ShareDialog'
 import { SheetBar } from '../components/SheetBar'
-import { errorMessage, folderLabel, formatBytes, formatDate, formatDateTime, OCR_LABEL } from '../lib/format'
+import { errorMessage, folderTitle, formatBytes, formatDate, formatDateTime, isTrash, OCR_LABEL, todayISO } from '../lib/format'
 
 export function DocumentPage() {
   const { id: rawId } = useParams()
@@ -52,6 +52,7 @@ function DocumentView({ doc }: { doc: DocumentDetail }) {
   const [typeName, setTypeName] = useState(doc.type?.name ?? '')
   const [correspondent, setCorrespondent] = useState(doc.correspondent)
   const [tagList, setTagList] = useState<string[]>(doc.tags)
+  const [validUntil, setValidUntil] = useState(doc.valid_until ?? '')
   const [folderId, setFolderId] = useState<string>(String(doc.folder_id))
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [sharing, setSharing] = useState(false)
@@ -73,10 +74,15 @@ function DocumentView({ doc }: { doc: DocumentDetail }) {
           correspondent: correspondent.trim(),
           tags: tagList,
           folder_id: Number(folderId),
+          // Left out when unchanged, so taking an expired document out of Trash clears its date on the server.
+          valid_until: validUntil !== (doc.valid_until ?? '') ? validUntil : undefined,
         },
       },
       {
-        onSuccess: () => notifications.show({ color: 'prussian', message: `Saved No. ${doc.id}` }),
+        onSuccess: (saved) => {
+          setValidUntil(saved.valid_until ?? '')
+          notifications.show({ color: 'prussian', message: `Saved No. ${doc.id}` })
+        },
         onError: (err) => notifications.show({ color: 'red', title: "Couldn't save", message: errorMessage(err) }),
       },
     )
@@ -84,8 +90,10 @@ function DocumentView({ doc }: { doc: DocumentDetail }) {
 
   const folderData = (folders.data ?? []).map((f) => ({
     value: String(f.id),
-    label: f.is_system ? 'Inbox' : folderLabel(f.path),
+    label: folderTitle(f),
   }))
+
+  const inTrash = (folders.data ?? []).some((f) => isTrash(f) && f.id === doc.folder_id)
 
   return (
     <Box className="ax-detail">
@@ -132,6 +140,16 @@ function DocumentView({ doc }: { doc: DocumentDetail }) {
                 maxLength={200}
               />
               <DateField label="Date" value={date} onValueChange={setDate} />
+              <DateField
+                label="Valid until"
+                description={
+                  validUntil && validUntil < todayISO()
+                    ? 'This date has passed.'
+                    : 'Optional. The document moves to Trash the day after.'
+                }
+                value={validUntil}
+                onValueChange={setValidUntil}
+              />
               <Autocomplete
                 label="Type"
                 data={(types.data ?? []).map((t) => t.name)}
@@ -164,6 +182,13 @@ function DocumentView({ doc }: { doc: DocumentDetail }) {
                 allowDeselect={false}
                 searchable
               />
+              {inTrash && (
+                <Alert color="gray" variant="light">
+                  {doc.valid_until
+                    ? `Moved here because it was valid until ${formatDate(doc.valid_until)}. Choose another folder and save to restore it; the date is then cleared.`
+                    : 'This document is in the Trash.'}
+                </Alert>
+              )}
               <Group justify="flex-end">
                 <Button onClick={onSave} loading={save.isPending}>
                   Save changes

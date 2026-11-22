@@ -127,7 +127,8 @@ func (s *server) deleteDocument(w http.ResponseWriter, r *http.Request, _ store.
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// uploadDocument files one uploaded file into INBOX. Multipart fields: file, and an optional title.
+// uploadDocument files one uploaded file into INBOX. Multipart fields: file, an optional title, and an
+// optional valid_until (YYYY-MM-DD): the document moves to Trash once that day has passed.
 func (s *server) uploadDocument(w http.ResponseWriter, r *http.Request, _ store.User) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes)
 	if err := r.ParseMultipartForm(8 << 20); err != nil {
@@ -151,12 +152,22 @@ func (s *server) uploadDocument(w http.ResponseWriter, r *http.Request, _ store.
 		return
 	}
 
+	var validUntil *string
+	if v := strings.TrimSpace(r.FormValue("valid_until")); v != "" {
+		if !archive.ValidDate(v) {
+			writeError(w, http.StatusBadRequest, "INVALID", "valid_until must be YYYY-MM-DD")
+			return
+		}
+		validUntil = &v
+	}
+
 	res, err := s.Ingest.Import(r.Context(), ingest.Candidate{
-		Source:    "upload",
-		SourceRef: header.Filename + "|" + strconv.Itoa(len(data)),
-		Filename:  header.Filename,
-		Title:     r.FormValue("title"),
-		Data:      data,
+		ValidUntil: validUntil,
+		Source:     "upload",
+		SourceRef:  header.Filename + "|" + strconv.Itoa(len(data)),
+		Filename:   header.Filename,
+		Title:      r.FormValue("title"),
+		Data:       data,
 	})
 	if err != nil {
 		s.writeStoreError(w, err)

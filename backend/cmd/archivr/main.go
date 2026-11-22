@@ -124,6 +124,7 @@ func run(log *slog.Logger) error {
 	})
 
 	ocrPool.Start(ctx)
+	go arch.RunExpiry(ctx, time.Hour)
 	go watcher.Run(ctx)
 	go mail.Run(ctx)
 

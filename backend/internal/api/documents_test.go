@@ -459,7 +459,7 @@ func TestFolderTreeAndInboxCount(t *testing.T) {
 	for _, it := range list.Items {
 		paths = append(paths, it.Path)
 	}
-	if strings.Join(paths, ",") != "Home,Home/Lease,INBOX" {
+	if strings.Join(paths, ",") != "Home,Home/Lease,INBOX,Trash" {
 		t.Fatalf("folder paths = %v", paths)
 	}
 }

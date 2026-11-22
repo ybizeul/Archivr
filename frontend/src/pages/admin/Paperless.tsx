@@ -7,7 +7,7 @@ import { api } from '../../api/client'
 import { keys, useFolders, usePaperlessImport, usePaperlessMapping, usePaperlessSettings } from '../../api/queries'
 import type { Folder, PaperlessMapping, PaperlessProgress, PaperlessSettings, PaperlessState, PaperlessTag } from '../../api/types'
 import { NewFolder } from '../../components/NewFolder'
-import { errorMessage, folderLabel, formatDateTime } from '../../lib/format'
+import { errorMessage, folderLabel, formatDateTime, isTrash } from '../../lib/format'
 
 const MASK = '********'
 
@@ -187,10 +187,12 @@ function ImportForm({ configured, saved, folders }: { configured: boolean; saved
     onSuccess: (res) => qc.setQueryData(keys.adminPaperlessImport, res),
   })
 
-  const folderOptions = folders.map((f) => ({
-    value: String(f.id),
-    label: f.is_system ? 'Inbox (sort them with triage)' : folderLabel(f.path),
-  }))
+  const folderOptions = folders
+    .filter((f) => !isTrash(f))
+    .map((f) => ({
+      value: String(f.id),
+      label: f.is_system ? 'Inbox (sort them with triage)' : folderLabel(f.path),
+    }))
 
   return (
     <Stack gap="md">

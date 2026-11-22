@@ -122,6 +122,22 @@ export function todayISO(): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
 
+/** Name shown for a folder: the system folders get their friendly names, others show their name. */
+export function folderName(f: { is_system: boolean; path: string; name: string }): string {
+  if (!f.is_system) return f.name
+  return f.path === 'INBOX' ? 'Inbox' : f.name
+}
+
+/** Folder name for headings and pickers: friendly name for system folders, "Home / Lease" for the rest. */
+export function folderTitle(f: { is_system: boolean; path: string; name: string }): string {
+  return f.is_system ? folderName(f) : folderLabel(f.path)
+}
+
+/** Whether a folder is the Trash system folder, where documents go once they expire. */
+export function isTrash(f: { is_system: boolean; path: string }): boolean {
+  return f.is_system && f.path.toLowerCase() === 'trash'
+}
+
 /** "Home/Lease" → "Home / Lease", as shown on the filing card. */
 export function folderLabel(path: string): string {
   return path.split('/').join(' / ')

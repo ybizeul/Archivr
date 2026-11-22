@@ -249,9 +249,10 @@ export function useSharedDocument(token: string | undefined) {
 export function useUploadDocument() {
   const invalidate = useInvalidateDocuments()
   return useMutation({
-    mutationFn: async (file: File) => {
+    mutationFn: async ({ file, validUntil }: { file: File; validUntil?: string }) => {
       const body = new FormData()
       body.append('file', file)
+      if (validUntil) body.append('valid_until', validUntil)
       const res = await fetch('/api/v1/documents', { method: 'POST', body, credentials: 'same-origin' })
       if (!res.ok) {
         const payload = (await res.json().catch(() => ({}))) as { error?: { code?: string; message?: string } }

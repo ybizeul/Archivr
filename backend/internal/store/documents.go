@@ -45,7 +45,8 @@ type Document struct {
 	SourceRef       string   `json:"source_ref"`
 	OCRStatus       string   `json:"ocr_status"`
 	OCRError        string   `json:"ocr_error"`
-	Rotation        int      `json:"rotation"` // degrees clockwise, display only
+	Rotation        int      `json:"rotation"`    // degrees clockwise, display only
+	ValidUntil      *string  `json:"valid_until"` // last valid day, YYYY-MM-DD; the document is trashed after it
 	Snippet         string   `json:"snippet,omitempty"`
 }
 
@@ -58,6 +59,7 @@ type DocFields struct {
 	FolderID        int64
 	Filename        string
 	Rotation        int
+	ValidUntil      *string
 }
 
 // NewDocumentRow is what a document row needs on insert.
@@ -90,7 +92,7 @@ type DocFilter struct {
 const (
 	docSelect = `SELECT d.id, d.title, d.document_date, d.created_at, d.updated_at,
 	       d.type_id, t.name, t.color, d.correspondent_id, COALESCE(c.name, ''), d.folder_id, f.name, f.path,
-	       d.filename, d.mime, d.size, d.sha256, d.source, d.source_ref, d.ocr_status, d.ocr_error, d.rotation`
+	       d.filename, d.mime, d.size, d.sha256, d.source, d.source_ref, d.ocr_status, d.ocr_error, d.rotation, d.valid_until`
 	docFrom = ` FROM documents d
 	    JOIN folders f ON f.id = d.folder_id
 	    LEFT JOIN document_types t ON t.id = d.type_id
@@ -101,11 +103,11 @@ type rowScanner interface{ Scan(...any) error }
 
 func scanDocument(row rowScanner, extra ...any) (Document, error) {
 	var d Document
-	var date, typeName, typeColor sql.NullString
+	var date, typeName, typeColor, validUntil sql.NullString
 	var typeID, correspondentID sql.NullInt64
 	dest := []any{&d.ID, &d.Title, &date, &d.CreatedAt, &d.UpdatedAt,
 		&typeID, &typeName, &typeColor, &correspondentID, &d.Correspondent, &d.FolderID, &d.Folder.Name, &d.Folder.Path,
-		&d.Filename, &d.Mime, &d.Size, &d.SHA256, &d.Source, &d.SourceRef, &d.OCRStatus, &d.OCRError, &d.Rotation}
+		&d.Filename, &d.Mime, &d.Size, &d.SHA256, &d.Source, &d.SourceRef, &d.OCRStatus, &d.OCRError, &d.Rotation, &validUntil}
 	dest = append(dest, extra...)
 	if err := row.Scan(dest...); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -117,6 +119,10 @@ func scanDocument(row rowScanner, extra ...any) (Document, error) {
 	if date.Valid {
 		v := date.String
 		d.DocumentDate = &v
+	}
+	if validUntil.Valid {
+		v := validUntil.String
+		d.ValidUntil = &v
 	}
 	if typeID.Valid {
 		id := typeID.Int64
@@ -309,10 +315,10 @@ func (s *Store) InsertDocumentRow(ctx context.Context, r NewDocumentRow) (int64,
 func (s *Store) SaveDocumentFields(ctx context.Context, id int64, f DocFields) error {
 	_, err := s.q.ExecContext(ctx, `
 		UPDATE documents
-		   SET title = ?, document_date = ?, type_id = ?, correspondent_id = ?, folder_id = ?, filename = ?, rotation = ?,
+		   SET title = ?, document_date = ?, type_id = ?, correspondent_id = ?, folder_id = ?, filename = ?, rotation = ?, valid_until = ?,
 		       updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 		 WHERE id = ?`,
-		f.Title, f.DocumentDate, f.TypeID, f.CorrespondentID, f.FolderID, f.Filename, f.Rotation, id)
+		f.Title, f.DocumentDate, f.TypeID, f.CorrespondentID, f.FolderID, f.Filename, f.Rotation, f.ValidUntil, id)
 	if err != nil {
 		return fmt.Errorf("update document: %w", mapErr(err))
 	}
@@ -479,4 +485,26 @@ func nonNilTags(t []string) []string {
 		return []string{}
 	}
 	return t
+}
+
+// ExpiredDocuments lists documents whose valid_until is before today (YYYY-MM-DD) and
+// that are not yet in the given folder, oldest expiry first.
+func (s *Store) ExpiredDocuments(ctx context.Context, today string, exceptFolder int64) ([]int64, error) {
+	rows, err := s.q.QueryContext(ctx, `
+		SELECT id FROM documents
+		 WHERE valid_until IS NOT NULL AND valid_until < ? AND folder_id <> ?
+		 ORDER BY valid_until, id`, today, exceptFolder)
+	if err != nil {
+		return nil, fmt.Errorf("list expired documents: %w", err)
+	}
+	defer rows.Close()
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }

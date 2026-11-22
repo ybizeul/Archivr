@@ -37,6 +37,8 @@ export interface Document {
   ocr_error: string
   /** Degrees clockwise the browser turns the document. Display only. */
   rotation: 0 | 90 | 180 | 270
+  /** Last valid day, YYYY-MM-DD. The document moves to Trash after it. Null when it does not expire. */
+  valid_until: string | null
   snippet?: string
 }
 
@@ -124,6 +126,8 @@ export interface DocumentPatch {
   tags?: string[]
   folder_id?: number
   rotation?: number
+  /** Last valid day, YYYY-MM-DD. An empty string clears it. */
+  valid_until?: string
 }
 
 export interface UserRow {

@@ -55,9 +55,9 @@ Unknown paths under `/api/` return a JSON `404 NOT_FOUND`.
 | --- | --- |
 | `GET /inbox/count` | `{ "count", "folder_id" }`. `folder_id` is the INBOX folder (`1`). |
 | `GET /documents` | Query: `q` (words, prefix-matched, ANDed), `folder`, `subtree=1` (include subfolders), `type`, `tag`, `from` and `to` (date bounds), `ocr` (`pending`, `done`, `failed`, `skipped`), `inbox=1`, `sort` (`relevance`, `newest`, `oldest`, `date`, `title`), `limit` (default 50), `offset`. Returns `{ "items", "total" }`. With `q`, items carry a `snippet` where matches are marked with control characters, not HTML. |
-| `POST /documents` | Multipart, file in field `file`, optional `title`. The document goes into INBOX. `201` with the document. `409 DUPLICATE` if the same bytes are already filed, naming the existing number. `415` and `413` as above. |
+| `POST /documents` | Multipart, file in field `file`, optional `title`, optional `valid_until` (`YYYY-MM-DD`, the last valid day: see `PATCH`). The document goes into INBOX. `400 INVALID` for a bad `valid_until`. `201` with the document. `409 DUPLICATE` if the same bytes are already filed, naming the existing number. `415` and `413` as above. |
 | `GET /documents/{id}` | The document with its folder, type, tags, OCR status and text. |
-| `PATCH /documents/{id}` | Any of `title`, `document_date` (`YYYY-MM-DD` or `null`), `type_id`, `type` (a type name, matched without regard to case; a name not yet in the type list is created, and an empty name clears the type; wins over `type_id`), `correspondent` (name up to 200 characters, empty clears it; a name not yet in the correspondent list is added to it), `tags` (array of names), `folder_id`, `rotation` (`0`, `90`, `180` or `270` degrees clockwise: how the browser turns the document when it shows it; the file is never changed). Moves or renames the file when the folder or title changes. `400 INVALID` for bad values. |
+| `PATCH /documents/{id}` | Any of `title`, `document_date` (`YYYY-MM-DD` or `null`), `type_id`, `type` (a type name, matched without regard to case; a name not yet in the type list is created, and an empty name clears the type; wins over `type_id`), `correspondent` (name up to 200 characters, empty clears it; a name not yet in the correspondent list is added to it), `tags` (array of names), `folder_id`, `rotation` (`0`, `90`, `180` or `270` degrees clockwise: how the browser turns the document when it shows it; the file is never changed), `valid_until` (`YYYY-MM-DD`, the last day the document is valid, empty clears it; the day after, Archivr moves the document into the Trash folder. Moving an expired document out of Trash clears its date unless the same request sets one). Moves or renames the file when the folder or title changes. `400 INVALID` for bad values. |
 | `DELETE /documents/{id}` | `204`. **Permanent.** Removes the file, its sidecar, and the row. |
 | `GET /documents/{id}/file` | The stored file, inline, with its stored content type and `X-Content-Type-Options: nosniff`. |
 | `GET /documents/{id}/thumbnail` | JPEG preview, up to 480 px. |
@@ -84,8 +84,8 @@ The web app shows a link at `/share/{token}`.
 | --- | --- | --- |
 | `GET /folders` | | `{ "items" }`, with `id`, `parent_id`, `name`, `path`, `is_system`, and counts of documents and subfolders. |
 | `POST /folders` | `{ "name", "parent_id" }` | `201`. `parent_id` `null` or `0` puts the folder at the top level. |
-| `PATCH /folders/{id}` | `{ "name", "parent_id" }` | Renames or moves the folder, its directory, and everything under it. `400` for INBOX. |
-| `DELETE /folders/{id}` | | `204`. `409 IN_USE` while it holds documents or subfolders. `400` for INBOX. |
+| `PATCH /folders/{id}` | `{ "name", "parent_id" }` | Renames or moves the folder, its directory, and everything under it. `400` for INBOX and Trash. |
+| `DELETE /folders/{id}` | | `204`. `409 IN_USE` while it holds documents or subfolders. `400` for INBOX and Trash. |
 
 ## Types and tags
 

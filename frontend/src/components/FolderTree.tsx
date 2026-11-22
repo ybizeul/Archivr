@@ -4,7 +4,7 @@ import { notifications } from '@mantine/notifications'
 import { IconDots, IconFolder, IconFolderOpen, IconPlus } from '@tabler/icons-react'
 import { useFolderMutations, useFolders } from '../api/queries'
 import type { Folder } from '../api/types'
-import { errorMessage } from '../lib/format'
+import { errorMessage, folderName } from '../lib/format'
 
 interface FolderTreeProps {
   selected?: number
@@ -30,7 +30,7 @@ function buildTree(folders: Folder[]): Node[] {
   return make(null)
 }
 
-/** The folder tree in the library. INBOX is a system folder: it is shown but cannot be changed. */
+/** The folder tree in the library. INBOX and Trash are system folders: they are shown but cannot be changed. */
 export function FolderTree({ selected, onSelect }: FolderTreeProps) {
   const folders = useFolders()
   const tree = useMemo(() => buildTree(folders.data ?? []), [folders.data])
@@ -51,7 +51,7 @@ export function FolderTree({ selected, onSelect }: FolderTreeProps) {
           >
             {active ? <IconFolderOpen size={16} stroke={1.6} /> : <IconFolder size={16} stroke={1.6} />}
             <Text component="span" size="sm" truncate className="ax-tree-name">
-              {f.is_system ? 'Inbox' : f.name}
+              {folderName(f)}
             </Text>
             <Text component="span" size="xs" c="dimmed" className="ax-mono">
               {f.document_count}

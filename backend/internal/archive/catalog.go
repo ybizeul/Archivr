@@ -54,7 +54,7 @@ func (s *Service) CreateFolder(ctx context.Context, parentID *int64, name string
 }
 
 // UpdateFolder renames or moves a folder, its directory, and every folder under it.
-// INBOX is a system folder and cannot be changed.
+// system folders (INBOX, Trash) cannot be changed.
 func (s *Service) UpdateFolder(ctx context.Context, id int64, p FolderPatch) (store.Folder, error) {
 	var out store.Folder
 	var undo func()
@@ -64,7 +64,7 @@ func (s *Service) UpdateFolder(ctx context.Context, id int64, p FolderPatch) (st
 			return err
 		}
 		if cur.IsSystem {
-			return invalid("INBOX is a system folder and cannot be changed")
+			return invalid("system folders (INBOX, Trash) cannot be changed")
 		}
 		name := cur.Name
 		if p.Name != nil {
@@ -133,7 +133,7 @@ func (s *Service) DeleteFolder(ctx context.Context, id int64) error {
 			return err
 		}
 		if cur.IsSystem {
-			return invalid("INBOX is a system folder and cannot be deleted")
+			return invalid("system folders (INBOX, Trash) cannot be deleted")
 		}
 		if cur.Documents > 0 || cur.Children > 0 {
 			return fmt.Errorf("%w: folder %q still holds documents or subfolders", store.ErrInUse, cur.Name)

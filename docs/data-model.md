@@ -16,7 +16,7 @@ Mirrors the folder tree under `DATA_DIR/documents`.
 | `parent_id` | `NULL` at the top level. `ON DELETE RESTRICT`: a folder with children cannot be removed. |
 | `name` | No `/`, not empty. |
 | `path` | Full path such as `Home/Lease`. Unique, and unique case-insensitively (`folders_path_nocase`). |
-| `is_system` | `1` for INBOX. It cannot be renamed, moved or deleted. |
+| `is_system` | `1` for INBOX and Trash. They cannot be renamed, moved or deleted. Trash (path `Trash`, added by migration `0007`) is where expired documents go. It is an ordinary folder on disk, separate from `DATA_DIR/trash`. |
 
 ### `documents`
 
@@ -38,9 +38,10 @@ One row per archived file.
 | `ocr_status` | `pending`, `done`, `failed` or `skipped` (no OCR engine installed). |
 | `ocr_error` | Last error message from OCR, empty otherwise. |
 | `rotation` | `0`, `90`, `180` or `270`: degrees clockwise the browser turns the document for display. Display metadata only, the file on disk is never rotated. Default `0`, set by the rotate buttons. |
+| `valid_until` | `YYYY-MM-DD`, the last day the document is valid, or `NULL` when it does not expire. The day after, a sweep moves the document into the Trash folder. The date stays on the document. Taking an expired document out of Trash clears it, so it is not trashed again. |
 | `created_at`, `updated_at` | UTC timestamps. |
 
-Indexes: folder, type, OCR status, date, created.
+Indexes: folder, type, OCR status, date, created, valid until.
 
 ### `document_types`
 
@@ -128,6 +129,10 @@ Written after each commit, and rewritten on each change. Its fields are the docu
 
 A sidecar write that fails is logged, and the change still stands. The database is the source of truth. The sidecar is a copy kept beside the file. There is no rebuild command yet.
 
+### Expiry
+
+On start and then every hour, `archive.Service.ExpireDocuments` moves each document whose `valid_until` is before today (server local time) into the Trash folder, the same way a manual move works: the file, sidecar and row change together. Documents in Trash stay searchable and can be moved back out.
+
 ### Delete
 
 Deleting moves the file and its sidecar into `trash/` inside the transaction, then removes the row. If the transaction fails, the files move back. After the commit the trashed copy is removed. **Deletion is permanent.**
@@ -137,4 +142,4 @@ Deleting moves the file and its sidecar into `trash/` inside the transaction, th
 - `documents.folder_id` always names a folder whose `path` matches the file's directory on disk.
 - Every document row has its file in the folder it names, and every file in a folder has a row, except during an operation that is still in progress.
 - `documents_fts` has one row per document. It is updated in the same transaction as the document.
-- A folder with documents or subfolders cannot be deleted. Renaming or moving a folder moves its directory and its subtree. INBOX cannot be renamed, moved or deleted.
+- A folder with documents or subfolders cannot be deleted. Renaming or moving a folder moves its directory and its subtree. INBOX and Trash cannot be renamed, moved or deleted.
