@@ -721,7 +721,10 @@ html[data-mantine-color-scheme='dark'] .mantine-Button-root[data-variant='filled
 
 /* Phones: one column, no sideways scrolling anywhere. Tables turn into stacked cards. */
 @media (max-width: 767px) {
-  /* Safety net only: clip never creates a scroll container, so the page still scrolls normally. */
+  /* Safety net only: clip never creates a scroll container, so the page still scrolls normally.
+     The root is clipped too, and the viewport meta sets a minimum scale, so iOS Safari never zooms
+     the page out to fit something wide. That zoom leaves the fixed bars wider than the content. */
+  html,
   body {
     overflow-x: clip;
     max-width: 100%;
@@ -878,6 +881,12 @@ html[data-mantine-color-scheme='dark'] .mantine-Button-root[data-variant='filled
   .ax-detail-sheet {
     height: 55dvh;
     min-height: 320px;
+  }
+
+  .ax-detail-grid > *,
+  .ax-detail-side > * {
+    min-width: 0;
+    max-width: 100%;
   }
 
   .ax-facts {
