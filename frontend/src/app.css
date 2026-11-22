@@ -1026,6 +1026,41 @@ html[data-mantine-color-scheme='dark'] .mantine-Button-root[data-variant='filled
   object-position: top;
 }
 
+/* A document's saved rotation turns its thumbnail. The cached JPEG itself is never changed.
+   The object-position keeps the top of the turned page in view when the tile crops it. */
+.ax-doc-tile-thumb {
+  position: relative;
+}
+
+.ax-doc-tile-thumb img[data-turn] {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(var(--ax-turn));
+}
+
+.ax-doc-tile-thumb img[data-turn='90'] {
+  --ax-turn: 90deg;
+  object-position: left;
+}
+
+.ax-doc-tile-thumb img[data-turn='180'] {
+  --ax-turn: 180deg;
+  object-position: bottom;
+}
+
+.ax-doc-tile-thumb img[data-turn='270'] {
+  --ax-turn: 270deg;
+  object-position: right;
+}
+
+/* A quarter turn swaps the tile's sides: the 4:3 box is 75% as tall as it is wide. */
+.ax-doc-tile-thumb img[data-turn='90'],
+.ax-doc-tile-thumb img[data-turn='270'] {
+  width: 75%;
+  height: 133.334%;
+}
+
 .ax-doc-tile-body {
   display: flex;
   flex-direction: column;

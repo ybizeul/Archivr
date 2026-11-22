@@ -458,6 +458,7 @@ function DocumentGrid({
           <UnstyledButton className="ax-doc-tile" onClick={() => onOpen(d.id)} aria-label={`No. ${d.id}, ${d.title}`}>
             <div className="ax-doc-tile-thumb">
               <img
+                data-turn={d.rotation || undefined}
                 src={`/api/v1/documents/${d.id}/thumbnail`}
                 alt=""
                 loading="lazy"
