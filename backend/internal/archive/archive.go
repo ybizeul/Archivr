@@ -1,10 +1,13 @@
 // Package archive combines the database and the filesystem for every change to
 // documents, folders, types and tags.
 //
-// Each mutation does its file operation first, then the database transaction.
-// If the transaction fails, the file operation is undone, so the tree and the
-// database never disagree for long. The JSON sidecars are best effort: they are
-// rewritten after a commit and a failure there is logged, not returned.
+// Each mutation makes its database changes in a transaction and does the file
+// move as the last step inside it, so only Commit can fail after the move. If
+// Commit fails the move is undone, and a failed undo is logged. A crash in that
+// window leaves the file somewhere the database does not expect; Reconcile
+// repairs that at startup, because the database is the source of truth. The
+// JSON sidecars are best effort: they are rewritten after a commit and a
+// failure there is logged, not returned.
 package archive
 
 import (
@@ -265,7 +268,8 @@ func (s *Service) today() string {
 }
 
 // Update changes a document's metadata. A title, folder or type change may rename
-// or move the file, and the move is undone if the database update fails.
+// or move the file. The move is the last step before commit and is undone if the
+// commit fails.
 func (s *Service) Update(ctx context.Context, id int64, p Patch) (store.Document, error) {
 	var out store.Document
 	var undo func()
@@ -375,12 +379,6 @@ func (s *Service) Update(ctx context.Context, id int64, p Patch) (store.Document
 		if err != nil {
 			return err
 		}
-		if newFile != oldFile {
-			if err := storage.MoveFile(oldFile, newFile); err != nil {
-				return err
-			}
-			undo = func() { _ = storage.MoveFile(newFile, oldFile) }
-		}
 
 		if err := tx.SaveDocumentFields(ctx, id, f); err != nil {
 			return err
@@ -394,7 +392,19 @@ func (s *Service) Update(ctx context.Context, id int64, p Patch) (store.Document
 			return err
 		}
 		out, err = tx.GetDocument(ctx, id)
-		return err
+		if err != nil {
+			return err
+		}
+
+		// The file moves last: after this only Commit can fail, which keeps the window
+		// in which the file and the row disagree as small as possible.
+		if newFile != oldFile {
+			if err := storage.MoveFile(oldFile, newFile); err != nil {
+				return err
+			}
+			undo = s.undoMove("move document", id, storage.MoveFile, newFile, oldFile)
+		}
+		return nil
 	})
 	if err != nil {
 		if undo != nil {
@@ -406,8 +416,21 @@ func (s *Service) Update(ctx context.Context, id int64, p Patch) (store.Document
 	return out, nil
 }
 
-// Delete moves the document into the trash, deletes its rows, and removes the
-// trashed file only after the commit. A failed commit moves the file back.
+// undoMove returns a closure that puts a moved file or folder back from "now" to
+// "orig". It never discards a failure: if the move back fails, the tree and the
+// database disagree, so it logs at error level. The startup reconciler repairs that.
+func (s *Service) undoMove(what string, id int64, move func(from, to string) error, now, orig string) func() {
+	return func() {
+		if err := move(now, orig); err != nil {
+			s.logger().Error("could not undo a file move after a failed commit; "+
+				"the tree and the database disagree until the reconciler repairs it at the next start",
+				"operation", what, "id", id, "is_at", now, "database_expects", orig, "error", err)
+		}
+	}
+}
+
+// Delete deletes the document's rows, then moves the file into the trash, and
+// removes the trashed file only after the commit. A failed commit moves the file back.
 func (s *Service) Delete(ctx context.Context, id int64) error {
 	var undo func()
 	var trashed string
@@ -420,13 +443,18 @@ func (s *Service) Delete(ctx context.Context, id int64) error {
 		if err != nil {
 			return err
 		}
-		trashed = filepath.Join(s.Layout.TrashDir(),
-			fmt.Sprintf("%d-%d-%s", id, s.now().UnixNano(), cur.Filename))
-		if err := storage.MoveFile(from, trashed); err != nil {
+		if err := tx.DeleteDocumentRow(ctx, id); err != nil {
 			return err
 		}
-		undo = func() { _ = storage.MoveFile(trashed, from) }
-		return tx.DeleteDocumentRow(ctx, id)
+		// The file moves last, so only Commit can fail after it.
+		dest := filepath.Join(s.Layout.TrashDir(),
+			fmt.Sprintf("%d-%d-%s", id, s.now().UnixNano(), cur.Filename))
+		if err := storage.MoveFile(from, dest); err != nil {
+			return err
+		}
+		trashed = dest
+		undo = s.undoMove("delete document", id, storage.MoveFile, dest, from)
+		return nil
 	})
 	if err != nil {
 		if undo != nil {

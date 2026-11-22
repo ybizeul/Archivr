@@ -342,6 +342,35 @@ func (s *Store) DeleteDocumentRow(ctx context.Context, id int64) error {
 	return nil
 }
 
+// DocLocation is where the database says a document's file lives.
+type DocLocation struct {
+	ID         int64
+	FolderPath string
+	Filename   string
+}
+
+// DocumentLocations lists the folder path and file name of every document. The startup
+// reconciler uses it to compare the database with the tree on disk.
+func (s *Store) DocumentLocations(ctx context.Context) ([]DocLocation, error) {
+	rows, err := s.q.QueryContext(ctx, `
+		SELECT d.id, f.path, d.filename
+		  FROM documents d JOIN folders f ON f.id = d.folder_id
+		 ORDER BY d.id`)
+	if err != nil {
+		return nil, fmt.Errorf("list document locations: %w", err)
+	}
+	defer rows.Close()
+	var out []DocLocation
+	for rows.Next() {
+		var l DocLocation
+		if err := rows.Scan(&l.ID, &l.FolderPath, &l.Filename); err != nil {
+			return nil, err
+		}
+		out = append(out, l)
+	}
+	return out, rows.Err()
+}
+
 // SyncFTS rewrites a document's search entry from its current title, type, tags and text.
 // Callers run it in the same transaction as the write that changed those fields.
 func (s *Store) SyncFTS(ctx context.Context, id int64) error {

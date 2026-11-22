@@ -105,15 +105,19 @@ func (s *Service) UpdateFolder(ctx context.Context, id int64, p FolderPatch) (st
 		if err != nil {
 			return invalid("folder name %q is not allowed", name)
 		}
-		if err := storage.MoveFolder(oldDir, newDir); err != nil {
-			return err
-		}
-		undo = func() { _ = storage.MoveFolder(newDir, oldDir) }
 		if err := tx.UpdateFolderTree(ctx, id, parentID, name, cur.Path, newPath); err != nil {
 			return err
 		}
 		out, err = tx.FolderByID(ctx, id)
-		return err
+		if err != nil {
+			return err
+		}
+		// The directory moves last, so only Commit can fail after it.
+		if err := storage.MoveFolder(oldDir, newDir); err != nil {
+			return err
+		}
+		undo = s.undoMove("move folder", id, storage.MoveFolder, newDir, oldDir)
+		return nil
 	})
 	if err != nil {
 		if undo != nil {

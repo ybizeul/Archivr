@@ -35,16 +35,32 @@ Archivr is one Go process. It serves the API, the embedded web app, the OCR work
 
 ## Mutation rules
 
-Every change to a document follows the same order, so the file and the row never disagree for long:
+A file move and a database commit cannot be made atomic together, so every change follows a fixed order. The database is the source of truth, and the file operation comes last:
 
-1. Do the file operation first (write, move, or remove), into a temp name and then renamed into place.
-2. Open a database transaction and make the row changes.
-3. If the transaction fails, undo the file operation.
+1. Open a database transaction, validate, compute the old and new paths, and make all the row changes (fields, tags, search index).
+2. Do the file operation as the last step inside the transaction (move a document, move a folder directory, or move a deleted document into `trash/`). Creating a document is the exception: its file is written first, because the ID is only known once the row exists, and it is removed again if the transaction fails.
+3. Commit. Only `Commit` can fail after the file has moved. If it does, the move is undone. A failed undo is logged at error level with the document ID and both paths, never discarded.
 4. After commit, write the sidecar and queue any OCR work. A sidecar failure is logged, not fatal, because the database is the source of truth and sidecars are for recovery.
 
-Moves carry the sidecar with them. A failed database step after a move puts the file back, and a test covers this.
+Moves carry the sidecar with them. A database failure before the move leaves the file untouched, and a test covers this.
 
-Deleting a document moves its file into `trash/` inside the transaction, so a database failure restores it. After the commit the trashed file and its sidecar are removed. **Deletion is permanent.** The trash is a holding area for rollback, not a recovery bin.
+Deleting a document deletes its rows, then moves its file into `trash/`, then commits. After the commit the trashed file and its sidecar are removed. **Deletion is permanent.** The trash is a holding area for rollback, not a recovery bin.
+
+### Interrupted moves and the startup reconciler
+
+Because the file moves before the commit, a crash leaves one of two states: the file is at the new path while the database still names the old one, or both are new. Nothing else is possible, so the repair rule is simple: **the database wins, and a stray file is moved to where the database says it belongs.**
+
+`archive.Service.Reconcile` applies that rule once at startup, after the database opens and before the OCR workers, the expiry sweep and the watch folder start. It is safe to run again: a second run changes nothing. It does the following:
+
+- Creates a directory for every folder in the database that has none.
+- Finds each document's file by the ID at the start of its name. If the file is missing at the expected path and exists elsewhere in the tree, it moves the file and its sidecar there, then rewrites the sidecar.
+- Reads `trash/` entries (`<id>-<nanos>-<filename>`). If the document row still exists, the file is restored to its expected path. If the row is gone, the delete is finished and the entry is removed.
+- Removes empty directories that no folder row accounts for, such as the husk of an interrupted folder move.
+- Reports, and leaves alone, anything it cannot fix: a file that is missing everywhere, two files that claim one ID, or a file that no row owns. These are logged at error level.
+
+It does not run on a timer. A move that is in flight while it runs looks the same as an interrupted one, so it only runs when nothing else is changing the tree.
+
+SQLite runs in WAL mode, so a power loss can drop the last committed transaction and leave the database older than the file. The same rule covers it.
 
 ## Intake and deduplication
 

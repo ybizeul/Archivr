@@ -123,6 +123,15 @@ func run(log *slog.Logger) error {
 		Log:      log,
 	})
 
+	// Repair any file move that a crash interrupted, before anything else touches the tree.
+	// It runs once, here: while workers and requests are live, a move that is in flight
+	// would look like an interrupted one.
+	if rep, err := arch.Reconcile(ctx); err != nil {
+		return err
+	} else if len(rep.Problems) > 0 {
+		log.Warn("reconcile left problems for an administrator", "count", len(rep.Problems))
+	}
+
 	ocrPool.Start(ctx)
 	go arch.RunExpiry(ctx, time.Hour)
 	go watcher.Run(ctx)

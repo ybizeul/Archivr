@@ -487,3 +487,218 @@ func TestExpiredDocumentsMoveToTrash(t *testing.T) {
 }
 
 func strPtr(s string) *string { return &s }
+
+// prime creates the directories of the system folders (INBOX, Trash), so later reports
+// only count what a test changed.
+func prime(t *testing.T, svc *Service) {
+	t.Helper()
+	if _, err := svc.Reconcile(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// reconcileTwice runs Reconcile, then runs it again and checks the second run is a no-op.
+func reconcileTwice(t *testing.T, svc *Service) ReconcileReport {
+	t.Helper()
+	ctx := context.Background()
+	first, err := svc.Reconcile(ctx)
+	if err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	second, err := svc.Reconcile(ctx)
+	if err != nil {
+		t.Fatalf("second reconcile: %v", err)
+	}
+	if second.Changed() {
+		t.Fatalf("second reconcile changed things: %+v", second)
+	}
+	return first
+}
+
+// A crash after the file moved but before the commit leaves the database pointing at
+// the old path. Reconcile moves the file, and its sidecar, back.
+func TestReconcileRepairsInterruptedDocumentMove(t *testing.T) {
+	svc, _, layout := newService(t)
+	prime(t, svc)
+	ctx := context.Background()
+	doc := create(t, svc, "Scan", "rc-move", 0)
+	if _, err := svc.CreateFolder(ctx, nil, "Finance"); err != nil {
+		t.Fatal(err)
+	}
+
+	dbPath := mustFile(t, layout, "INBOX", doc.Filename)
+	strayName := "10000 - Renamed by a crashed update.pdf"
+	stray := mustFile(t, layout, "Finance", strayName)
+	if err := storage.MoveFile(dbPath, stray); err != nil {
+		t.Fatal(err)
+	}
+
+	rep := reconcileTwice(t, svc)
+	if rep.MovedFiles != 1 || len(rep.Problems) != 0 {
+		t.Fatalf("report = %+v, want one moved file and no problems", rep)
+	}
+	if !exists(t, dbPath) || !exists(t, dbPath+".archivr.json") {
+		t.Fatal("file and sidecar were not moved back to the path in the database")
+	}
+	if exists(t, stray) || exists(t, stray+".archivr.json") {
+		t.Fatal("stray file or sidecar left behind")
+	}
+}
+
+// A crash during a folder move leaves the directory under its new name while the rows
+// still carry the old path. Reconcile moves the files back and clears the empty husk.
+func TestReconcileRepairsInterruptedFolderMove(t *testing.T) {
+	svc, _, layout := newService(t)
+	prime(t, svc)
+	ctx := context.Background()
+	home, err := svc.CreateFolder(ctx, nil, "Home")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease, err := svc.CreateFolder(ctx, &home.ID, "Lease")
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := create(t, svc, "Contract", "rc-folder", lease.ID)
+
+	oldDir, _ := layout.FolderDir("Home")
+	newDir, _ := layout.FolderDir("House")
+	if err := storage.MoveFolder(oldDir, newDir); err != nil {
+		t.Fatal(err)
+	}
+
+	rep := reconcileTwice(t, svc)
+	if rep.MovedFiles != 1 || len(rep.Problems) != 0 {
+		t.Fatalf("report = %+v, want one moved file and no problems", rep)
+	}
+	if rep.CreatedFolders != 2 || rep.RemovedDirs != 2 {
+		t.Fatalf("report = %+v, want 2 folders created and 2 stray dirs removed", rep)
+	}
+	file := mustFile(t, layout, "Home/Lease", doc.Filename)
+	if !exists(t, file) || !exists(t, file+".archivr.json") {
+		t.Fatal("document did not return to the folder the database expects")
+	}
+	if exists(t, newDir) {
+		t.Fatal("stray directory of the interrupted move still exists")
+	}
+}
+
+// A crash during a delete can leave the file in trash/ with its row still there, or
+// with the row gone. The first is restored, the second is removed.
+func TestReconcileRepairsInterruptedDelete(t *testing.T) {
+	svc, _, layout := newService(t)
+	prime(t, svc)
+	doc := create(t, svc, "Receipt", "rc-delete-live", 0)
+	live := mustFile(t, layout, "INBOX", doc.Filename)
+
+	trashedLive := filepath.Join(layout.TrashDir(), "10000-111-"+doc.Filename)
+	if err := storage.MoveFile(live, trashedLive); err != nil {
+		t.Fatal(err)
+	}
+	// An entry whose row was deleted: the commit succeeded but the trash was not emptied.
+	gone := filepath.Join(layout.TrashDir(), "10099-222-10099 - Gone.pdf")
+	if err := os.MkdirAll(layout.TrashDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(gone, pdfBytes("gone"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(storage.SidecarPath(gone), []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	rep := reconcileTwice(t, svc)
+	if rep.RestoredTrash != 1 || rep.RemovedTrash != 1 || len(rep.Problems) != 0 {
+		t.Fatalf("report = %+v, want one restored and one removed", rep)
+	}
+	if !exists(t, live) || !exists(t, live+".archivr.json") {
+		t.Fatal("trashed file with a live row was not restored")
+	}
+	if exists(t, trashedLive) || exists(t, gone) || exists(t, storage.SidecarPath(gone)) {
+		t.Fatal("trash entries left behind")
+	}
+}
+
+func TestReconcileCreatesMissingFolderDirectory(t *testing.T) {
+	svc, _, layout := newService(t)
+	prime(t, svc)
+	f, err := svc.CreateFolder(context.Background(), nil, "Tax")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir, _ := layout.FolderDir(f.Path)
+	if err := os.Remove(dir); err != nil {
+		t.Fatal(err)
+	}
+	rep := reconcileTwice(t, svc)
+	if rep.CreatedFolders != 1 || !exists(t, dir) {
+		t.Fatalf("report = %+v, directory exists = %v", rep, exists(t, dir))
+	}
+}
+
+// What Reconcile cannot fix, it reports and leaves alone.
+func TestReconcileReportsWhatItCannotFix(t *testing.T) {
+	svc, st, layout := newService(t)
+	prime(t, svc)
+	ctx := context.Background()
+	missing := create(t, svc, "Vanished", "rc-missing", 0)
+	clash := create(t, svc, "Clash", "rc-clash", 0)
+	if _, err := svc.CreateFolder(ctx, nil, "A"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.CreateFolder(ctx, nil, "B"); err != nil {
+		t.Fatal(err)
+	}
+
+	// One document's file is gone altogether.
+	missingFile := mustFile(t, layout, "INBOX", missing.Filename)
+	if err := os.Remove(missingFile); err != nil {
+		t.Fatal(err)
+	}
+	// Another has vanished from its place, and two files claim its ID.
+	clashFile := mustFile(t, layout, "INBOX", clash.Filename)
+	if err := os.Remove(clashFile); err != nil {
+		t.Fatal(err)
+	}
+	a := mustFile(t, layout, "A", clash.Filename)
+	b := mustFile(t, layout, "B", clash.Filename)
+	for _, p := range []string{a, b} {
+		if err := os.WriteFile(p, pdfBytes("rc-clash"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// And a file in the tree that no row owns.
+	orphan := mustFile(t, layout, "A", "20000 - Orphan.pdf")
+	if err := os.WriteFile(orphan, pdfBytes("orphan"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	rep := reconcileTwice(t, svc)
+	if rep.Changed() {
+		t.Fatalf("report = %+v, want no changes", rep)
+	}
+	if len(rep.Problems) != 3 {
+		t.Fatalf("problems = %q, want 3", rep.Problems)
+	}
+	for _, p := range []string{a, b, orphan} {
+		if !exists(t, p) {
+			t.Fatalf("%s was touched", p)
+		}
+	}
+	if _, err := st.GetDocument(ctx, missing.ID); err != nil {
+		t.Fatalf("reconcile changed the database: %v", err)
+	}
+}
+
+// A normal archive needs no repair.
+func TestReconcileLeavesAHealthyArchiveAlone(t *testing.T) {
+	svc, _, _ := newService(t)
+	prime(t, svc)
+	ctx := context.Background()
+	f, _ := svc.CreateFolder(ctx, nil, "Tax")
+	create(t, svc, "One", "rc-h1", 0)
+	create(t, svc, "Two", "rc-h2", f.ID)
+	if rep := reconcileTwice(t, svc); rep.Changed() || len(rep.Problems) != 0 {
+		t.Fatalf("report = %+v, want nothing", rep)
+	}
+}
