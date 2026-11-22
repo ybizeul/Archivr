@@ -52,14 +52,19 @@ export function TriagePage() {
   const folderList = useFolders()
 
   const allItems = queue.items
-  const tagCounts = new Map<string, number>()
-  for (const d of allItems) for (const t of d.tags) tagCounts.set(t, (tagCounts.get(t) ?? 0) + 1)
-  // Most-used tags first; ties fall back to name.
-  const tagOptions = [...tagCounts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+  const knownTags = new Set<string>()
+  for (const d of allItems) for (const t of d.tags) knownTags.add(t)
   // A tag drops out of the filter once no inbox document carries it any more.
-  const activeTags = selectedTags.filter((t) => tagCounts.has(t))
+  const activeTags = selectedTags.filter((t) => knownTags.has(t))
   const filtering = activeTags.length > 0
   const items = filtering ? allItems.filter((d) => activeTags.every((t) => d.tags.includes(t))) : allItems
+  // Each pill counts the documents in the current view (those carrying every selected tag) that carry it.
+  // Tags no document in the view carries are left out; selected tags always stay so they can be unselected.
+  const tagCounts = new Map<string, number>()
+  for (const d of items) for (const t of d.tags) tagCounts.set(t, (tagCounts.get(t) ?? 0) + 1)
+  for (const t of activeTags) if (!tagCounts.has(t)) tagCounts.set(t, 0)
+  // Most-used tags first; ties fall back to name.
+  const tagOptions = [...tagCounts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
   const total = filtering ? items.length : queue.total
   const selectedId = Number(params.get('doc')) || 0
   const index = Math.max(0, items.findIndex((d) => d.id === selectedId))
