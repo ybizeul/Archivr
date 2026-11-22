@@ -47,7 +47,7 @@ export function TriagePage() {
 
   // Tag filter: a document stays in the view only if it carries every selected tag (AND).
   const [selectedTags, setSelectedTags] = useState<string[]>([])
-  const [bulkValues, setBulkValues] = useState<FilingValues | null>(null)
+  const [bulkValues, setBulkValues] = useState<BulkChanges | null>(null)
   const [bulkRunning, setBulkRunning] = useState(false)
   const folderList = useFolders()
   const typeList = useTypes()
@@ -150,22 +150,19 @@ export function TriagePage() {
     )
   }
 
-  const fileAll = async (values: FilingValues) => {
-    if (!values.folderId) return
+  const fileAll = async (changes: BulkChanges) => {
     const targets = items
     let done = 0
     let failed = 0
     setBulkRunning(true)
     for (const d of targets) {
-      // The title is never sent: every document keeps its own. Empty fields leave the document as it is,
-      // and the tags are added to the ones it already has.
-      const body: DocumentPatch = {
-        folder_id: values.folderId,
-        tags: [...new Set([...d.tags, ...values.tags])],
-      }
-      if (values.date) body.document_date = values.date
-      if (values.typeId) body.type_id = values.typeId
-      if (values.correspondent) body.correspondent = values.correspondent
+      // Only the fields changed on the card are sent. The title is never sent: every document keeps its own.
+      // Added tags are merged into the ones each document already has.
+      const body: DocumentPatch = { folder_id: changes.folderId }
+      if (changes.documentDate) body.document_date = changes.documentDate
+      if (changes.typeId) body.type_id = changes.typeId
+      if (changes.correspondent) body.correspondent = changes.correspondent
+      if (changes.addTags.length > 0) body.tags = [...new Set([...d.tags, ...changes.addTags])]
       try {
         await patch.mutateAsync({ id: d.id, patch: body })
         done++
@@ -243,9 +240,9 @@ export function TriagePage() {
             <Text size="sm">
               <b>Folder:</b> {folderLabel(folderList.data?.find((f) => f.id === bulkValues.folderId)?.path ?? '')}
             </Text>
-            {bulkValues.date && (
+            {bulkValues.documentDate && (
               <Text size="sm">
-                <b>Date:</b> {formatDate(bulkValues.date)}
+                <b>Date:</b> {formatDate(bulkValues.documentDate)}
               </Text>
             )}
             {bulkValues.typeId && (
@@ -258,9 +255,9 @@ export function TriagePage() {
                 <b>Correspondent:</b> {bulkValues.correspondent}
               </Text>
             )}
-            {bulkValues.tags.length > 0 && (
+            {bulkValues.addTags.length > 0 && (
               <Text size="sm">
-                <b>Add tags:</b> {bulkValues.tags.join(', ')}
+                <b>Add tags:</b> {bulkValues.addTags.join(', ')}
               </Text>
             )}
           </Stack>
@@ -425,7 +422,7 @@ function Sheet({ doc, filed, stampRun }: { doc: Document; filed: boolean; stampR
   return (
     <Box className="ax-sheet" data-filed={filed || undefined}>
       <SheetBar id={doc.id} />
-      <DocViewer key={doc.id} id={doc.id} mime={doc.mime} title={doc.title} />
+      <DocViewer key={doc.id} id={doc.id} mime={doc.mime} title={doc.title} rotation={doc.rotation} />
       <Stamp run={stampRun} label={`Filed · ${filedDate()}`} />
     </Box>
   )

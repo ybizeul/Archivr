@@ -149,10 +149,33 @@ html[data-mantine-color-scheme='dark'] .mantine-Button-root[data-variant='filled
   white-space: nowrap;
 }
 
-.ax-viewer-frame {
+/* The viewer: a tool row above the file. Rotation is applied here, with CSS only. */
+.ax-viewer {
   flex: 1;
-  width: 100%;
+  display: flex;
+  flex-direction: column;
   min-height: 0;
+}
+
+.ax-viewer-tools {
+  flex: none;
+  padding: 0 12px 8px;
+}
+
+/* The PDF stage is a size container, so the frame can be sized from it when turned a quarter. */
+.ax-viewer-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  container-type: size;
+  overflow: hidden;
+  background: var(--ax-mist);
+}
+
+.ax-viewer-frame {
+  position: absolute;
+  top: 50%;
+  left: 50%;
   border: 0;
   background: var(--ax-mist);
 }

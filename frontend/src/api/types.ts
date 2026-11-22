@@ -35,6 +35,8 @@ export interface Document {
   source_ref: string
   ocr_status: OCRStatus
   ocr_error: string
+  /** Degrees clockwise the browser turns the document. Display only. */
+  rotation: 0 | 90 | 180 | 270
   snippet?: string
 }
 
@@ -101,6 +103,7 @@ export interface DocumentPatch {
   correspondent?: string
   tags?: string[]
   folder_id?: number
+  rotation?: number
 }
 
 export interface UserRow {

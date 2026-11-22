@@ -81,6 +81,9 @@ type Patch struct {
 	Correspondent *string   `json:"correspondent"`
 	Tags          *[]string `json:"tags"`
 	FolderID      *int64    `json:"folder_id"`
+	// Rotation is how the browser turns the document, in degrees clockwise: 0, 90, 180 or 270.
+	// It is display metadata. The file on disk is never changed.
+	Rotation *int `json:"rotation"`
 }
 
 var dateRe = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
@@ -197,6 +200,7 @@ func (s *Service) Create(ctx context.Context, in NewDocument) (store.Document, e
 			CorrespondentID: correspondentID,
 			FolderID:        folder.ID,
 			Filename:        filename,
+			Rotation:        0,
 		})
 		if err != nil {
 			return err
@@ -243,6 +247,15 @@ func (s *Service) Update(ctx context.Context, id int64, p Patch) (store.Document
 			TypeID:          cur.TypeID,
 			CorrespondentID: cur.CorrespondentID,
 			FolderID:        cur.FolderID,
+			Rotation:        cur.Rotation,
+		}
+		if p.Rotation != nil {
+			switch *p.Rotation {
+			case 0, 90, 180, 270:
+				f.Rotation = *p.Rotation
+			default:
+				return invalid("rotation must be 0, 90, 180 or 270")
+			}
 		}
 		if p.Correspondent != nil {
 			c, err := cleanCorrespondent(*p.Correspondent)
@@ -383,6 +396,7 @@ func (s *Service) writeSidecar(d store.Document) {
 		SourceRef:     d.SourceRef,
 		SHA256:        d.SHA256,
 		Mime:          d.Mime,
+		Rotation:      d.Rotation,
 		CreatedAt:     d.CreatedAt,
 		UpdatedAt:     d.UpdatedAt,
 	}
@@ -407,6 +421,7 @@ type sidecar struct {
 	SourceRef     string   `json:"source_ref"`
 	SHA256        string   `json:"sha256"`
 	Mime          string   `json:"mime"`
+	Rotation      int      `json:"rotation"`
 	CreatedAt     string   `json:"created_at"`
 	UpdatedAt     string   `json:"updated_at"`
 }

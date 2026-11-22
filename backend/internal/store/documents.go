@@ -45,6 +45,7 @@ type Document struct {
 	SourceRef       string   `json:"source_ref"`
 	OCRStatus       string   `json:"ocr_status"`
 	OCRError        string   `json:"ocr_error"`
+	Rotation        int      `json:"rotation"` // degrees clockwise, display only
 	Snippet         string   `json:"snippet,omitempty"`
 }
 
@@ -56,6 +57,7 @@ type DocFields struct {
 	CorrespondentID *int64
 	FolderID        int64
 	Filename        string
+	Rotation        int
 }
 
 // NewDocumentRow is what a document row needs on insert.
@@ -88,7 +90,7 @@ type DocFilter struct {
 const (
 	docSelect = `SELECT d.id, d.title, d.document_date, d.created_at, d.updated_at,
 	       d.type_id, t.name, t.color, d.correspondent_id, COALESCE(c.name, ''), d.folder_id, f.name, f.path,
-	       d.filename, d.mime, d.size, d.sha256, d.source, d.source_ref, d.ocr_status, d.ocr_error`
+	       d.filename, d.mime, d.size, d.sha256, d.source, d.source_ref, d.ocr_status, d.ocr_error, d.rotation`
 	docFrom = ` FROM documents d
 	    JOIN folders f ON f.id = d.folder_id
 	    LEFT JOIN document_types t ON t.id = d.type_id
@@ -103,7 +105,7 @@ func scanDocument(row rowScanner, extra ...any) (Document, error) {
 	var typeID, correspondentID sql.NullInt64
 	dest := []any{&d.ID, &d.Title, &date, &d.CreatedAt, &d.UpdatedAt,
 		&typeID, &typeName, &typeColor, &correspondentID, &d.Correspondent, &d.FolderID, &d.Folder.Name, &d.Folder.Path,
-		&d.Filename, &d.Mime, &d.Size, &d.SHA256, &d.Source, &d.SourceRef, &d.OCRStatus, &d.OCRError}
+		&d.Filename, &d.Mime, &d.Size, &d.SHA256, &d.Source, &d.SourceRef, &d.OCRStatus, &d.OCRError, &d.Rotation}
 	dest = append(dest, extra...)
 	if err := row.Scan(dest...); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -307,10 +309,10 @@ func (s *Store) InsertDocumentRow(ctx context.Context, r NewDocumentRow) (int64,
 func (s *Store) SaveDocumentFields(ctx context.Context, id int64, f DocFields) error {
 	_, err := s.q.ExecContext(ctx, `
 		UPDATE documents
-		   SET title = ?, document_date = ?, type_id = ?, correspondent_id = ?, folder_id = ?, filename = ?,
+		   SET title = ?, document_date = ?, type_id = ?, correspondent_id = ?, folder_id = ?, filename = ?, rotation = ?,
 		       updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 		 WHERE id = ?`,
-		f.Title, f.DocumentDate, f.TypeID, f.CorrespondentID, f.FolderID, f.Filename, id)
+		f.Title, f.DocumentDate, f.TypeID, f.CorrespondentID, f.FolderID, f.Filename, f.Rotation, id)
 	if err != nil {
 		return fmt.Errorf("update document: %w", mapErr(err))
 	}

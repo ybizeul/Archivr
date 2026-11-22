@@ -37,6 +37,7 @@ One row per archived file.
 | `source_ref` | `name\|size` for uploads and watch files, Message-ID for mail, `host#id` (the Paperless server and document ID) for Paperless. |
 | `ocr_status` | `pending`, `done`, `failed` or `skipped` (no OCR engine installed). |
 | `ocr_error` | Last error message from OCR, empty otherwise. |
+| `rotation` | `0`, `90`, `180` or `270`: degrees clockwise the browser turns the document for display. Display metadata only, the file on disk is never rotated. Default `0`, set by the rotate buttons. |
 | `created_at`, `updated_at` | UTC timestamps. |
 
 Indexes: folder, type, OCR status, date, created.

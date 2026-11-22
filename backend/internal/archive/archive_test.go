@@ -145,6 +145,52 @@ func TestUpdateRenamesAndMovesFileWithSidecar(t *testing.T) {
 	}
 }
 
+// Rotation is display metadata: it is stored and survives other edits, and the file on
+// disk is never touched.
+func TestRotationIsMetadataOnly(t *testing.T) {
+	svc, _, layout := newService(t)
+	ctx := context.Background()
+	doc := create(t, svc, "Scan", "rot", 0)
+	file := mustFile(t, layout, "INBOX", doc.Filename)
+	before, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if doc.Rotation != 0 {
+		t.Fatalf("new document rotation = %d, want 0", doc.Rotation)
+	}
+
+	ninety := 90
+	got, err := svc.Update(ctx, doc.ID, Patch{Rotation: &ninety})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Rotation != 90 {
+		t.Fatalf("rotation = %d, want 90", got.Rotation)
+	}
+	title := "Renamed"
+	got, err = svc.Update(ctx, doc.ID, Patch{Title: &title})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Rotation != 90 {
+		t.Fatalf("rotation after another edit = %d, want 90", got.Rotation)
+	}
+
+	bad := 45
+	if _, err := svc.Update(ctx, doc.ID, Patch{Rotation: &bad}); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("rotation 45: err = %v, want ErrInvalid", err)
+	}
+
+	after, err := os.ReadFile(mustFile(t, layout, "INBOX", got.Filename))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(before) != string(after) {
+		t.Fatal("the file on disk changed")
+	}
+}
+
 func TestFailedDatabaseStepRollsBackTheFileMove(t *testing.T) {
 	svc, st, layout := newService(t)
 	ctx := context.Background()

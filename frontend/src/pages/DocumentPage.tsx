@@ -102,7 +102,7 @@ function DocumentView({ doc }: { doc: DocumentDetail }) {
       <div className="ax-detail-grid">
         <Box className="ax-sheet ax-detail-sheet">
           <SheetBar id={doc.id} />
-          <DocViewer key={doc.id} id={doc.id} mime={doc.mime} title={doc.title} />
+          <DocViewer key={doc.id} id={doc.id} mime={doc.mime} title={doc.title} rotation={doc.rotation} />
         </Box>
 
         <Stack gap="lg" className="ax-detail-side">
