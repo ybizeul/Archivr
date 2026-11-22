@@ -20,7 +20,7 @@ func (s *Store) ListTags(ctx context.Context, q string) ([]Tag, error) {
 	rows, err := s.q.QueryContext(ctx, `
 		SELECT t.id, t.name, COUNT(dt.document_id)
 		  FROM tags t LEFT JOIN document_tags dt ON dt.tag_id = t.id
-		 WHERE instr(lower(t.name), lower(?)) > 0 OR ? = ''
+		 WHERE instr(unaccent(t.name), unaccent(?)) > 0 OR ? = ''
 		 GROUP BY t.id
 		 ORDER BY COUNT(dt.document_id) DESC, t.name COLLATE NOCASE
 		 LIMIT 200`, q, q)

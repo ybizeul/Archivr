@@ -67,7 +67,7 @@ One row per document, written by the OCR worker.
 
 ### `documents_fts`
 
-FTS5 virtual table over `title`, `body`, `tags`, `type_name`, with `document_id UNINDEXED`. Tokenised with `unicode61 remove_diacritics 2`, so `Café` matches `cafe`.
+FTS5 virtual table over `title`, `body`, `tags`, `type_name` and `folded`, with `document_id UNINDEXED`. Tokenised with `unicode61 remove_diacritics 2`. `folded` is the same text with accents, ligatures and stroke letters reduced (`Café` matches `cafe`, `cœur` matches `coeur`). Snippets are read from the original columns. The store rewrites the index when the folding rules change.
 
 The store layer keeps it in step with the document rows, inside the same transaction as each change. Nothing else writes to it.
 

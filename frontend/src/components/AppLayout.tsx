@@ -8,6 +8,7 @@ import { useAuth } from '../auth/context'
 import { useDocuments, useInboxCount } from '../api/queries'
 import { DATE_LOCALES, setDateLocalePref, useDateLocalePref } from '../lib/dateLocale'
 import { browserLocale, datePattern, folderLabel, formatDate, formatDateInput } from '../lib/format'
+import { fold } from '../lib/fold'
 import { useLibraryLocation } from '../lib/libraryLocation'
 import { UploadButton } from './UploadButton'
 
@@ -239,10 +240,10 @@ function ArchiveSpotlight() {
       actions={actions}
       // Documents come from the server, so only the navigation entries are filtered here.
       filter={(q, acts) => {
-        const needle = q.trim().toLowerCase()
+        const needle = fold(q.trim())
         return acts.filter((a) => {
           if (!('id' in a)) return true
-          if (a.group === 'Go to') return needle === '' || (a.label ?? '').toLowerCase().includes(needle)
+          if (a.group === 'Go to') return needle === '' || fold(a.label ?? '').includes(needle)
           return true
         })
       }}

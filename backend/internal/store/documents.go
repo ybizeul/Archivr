@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"unicode"
 )
 
 // DocRef is the folder a document is filed in.
@@ -181,7 +180,14 @@ func (s *Store) ListDocuments(ctx context.Context, f DocFilter) ([]Document, int
 		args = append(args, match)
 		// Highlight markers are control characters, never HTML: the snippet text comes from OCR,
 		// and the client renders it as plain text with the markers turned into <mark> elements.
-		snippet = `snippet(documents_fts, -1, char(1), char(2), '…', 16)`
+		// The folded column is for matching only. Snippets stay on the original
+		// text, so an accented word is still shown with its accent.
+		snippet = `COALESCE(
+			NULLIF(snippet(documents_fts, 1, char(1), char(2), '…', 16), ''),
+			NULLIF(snippet(documents_fts, 0, char(1), char(2), '…', 16), ''),
+			NULLIF(snippet(documents_fts, 2, char(1), char(2), '…', 16), ''),
+			NULLIF(snippet(documents_fts, 3, char(1), char(2), '…', 16), ''),
+			'')`
 	}
 	if f.FolderID != 0 {
 		if f.Subtree {
@@ -265,6 +271,9 @@ func (s *Store) ListDocuments(ctx context.Context, f DocFilter) ([]Document, int
 	for i := range out {
 		out[i].Tags = nonNilTags(tags[out[i].ID])
 	}
+	if err := s.fillFoldedSnippets(ctx, f.Query, out); err != nil {
+		return nil, 0, err
+	}
 	return out, total, nil
 }
 
@@ -272,7 +281,7 @@ func orderBy(sort string, ranked bool) string {
 	switch sort {
 	case "relevance":
 		if ranked {
-			return "bm25(documents_fts), d.id DESC"
+			return searchRank + ", d.id DESC"
 		}
 	case "oldest":
 		return "d.id ASC"
@@ -282,26 +291,26 @@ func orderBy(sort string, ranked bool) string {
 		return "d.title COLLATE NOCASE, d.id"
 	}
 	if ranked {
-		return "bm25(documents_fts), d.id DESC"
+		return searchRank + ", d.id DESC"
 	}
 	return "d.id DESC"
 }
 
-// FTSQuery turns free text into a safe FTS5 expression. Each word becomes a quoted
-// prefix term, and the terms are ANDed. Punctuation is dropped, so user input
-// can never be parsed as FTS syntax.
+// The folded column is weighted 0: it can make a row match, but it must not
+// change the rank that title, text, tags and type already produce.
+const searchRank = "bm25(documents_fts, 1.0, 1.0, 1.0, 1.0, 0.0)"
+
+// FTSQuery turns free text into a safe FTS5 expression. Each word is folded
+// (accents, ligatures and stroke letters) and becomes a quoted prefix term,
+// and the terms are ANDed. Punctuation is dropped, so user input can never
+// be parsed as FTS syntax.
 func FTSQuery(q string) string {
-	words := strings.FieldsFunc(q, func(r rune) bool {
-		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
-	})
-	if len(words) > 12 {
-		words = words[:12]
+	terms := foldedTerms(q)
+	quoted := make([]string, len(terms))
+	for i, t := range terms {
+		quoted[i] = `"` + t + `"*`
 	}
-	terms := make([]string, 0, len(words))
-	for _, w := range words {
-		terms = append(terms, `"`+w+`"*`)
-	}
-	return strings.Join(terms, " ")
+	return strings.Join(quoted, " ")
 }
 
 // InsertDocumentRow adds a document row and returns its ID.
@@ -400,12 +409,127 @@ func (s *Store) SyncFTS(ctx context.Context, id int64) error {
 	// The correspondent is indexed in the tags column: the FTS table has no column of
 	// its own for it, and searches never target a single column.
 	words := append(append([]string{}, tags[id]...), correspondent)
+	tagsAndCorrespondent := strings.TrimSpace(strings.Join(words, " "))
+	// folded repeats the searchable text with accents and ligatures reduced,
+	// so a query for "coeur" matches a document that says "cœur". The original
+	// columns stay untouched and are what snippets are drawn from.
+	folded := Fold(strings.Join([]string{title, body, tagsAndCorrespondent, typeName}, " "))
 	if _, err := s.q.ExecContext(ctx, `
-		INSERT INTO documents_fts (title, body, tags, type_name, document_id) VALUES (?, ?, ?, ?, ?)`,
-		title, body, strings.TrimSpace(strings.Join(words, " ")), typeName, id); err != nil {
+		INSERT INTO documents_fts (title, body, tags, type_name, folded, document_id) VALUES (?, ?, ?, ?, ?, ?)`,
+		title, body, tagsAndCorrespondent, typeName, folded, id); err != nil {
 		return fmt.Errorf("write search entry: %w", err)
 	}
 	return nil
+}
+
+// fillFoldedSnippets adds an excerpt when the hit is only in the folded column,
+// which SQLite's snippet() does not read. Title, correspondent and tags are
+// tried before the extracted text, so a title match does not load every body.
+func (s *Store) fillFoldedSnippets(ctx context.Context, query string, docs []Document) error {
+	if query == "" {
+		return nil
+	}
+	var need []int64
+	for i := range docs {
+		// A snippet with no highlight is the column text SQLite returns when the
+		// hit is only in the folded column. Build one that marks the original word.
+		if !strings.Contains(docs[i].Snippet, "\x01") {
+			docs[i].Snippet = ""
+		}
+		if docs[i].Snippet != "" {
+			continue
+		}
+		typeName := ""
+		if docs[i].Type != nil {
+			typeName = docs[i].Type.Name
+		}
+		for _, part := range []string{docs[i].Title, docs[i].Correspondent, strings.Join(docs[i].Tags, " "), typeName} {
+			if snip := foldSnippet(part, query); snip != "" {
+				docs[i].Snippet = snip
+				break
+			}
+		}
+		if docs[i].Snippet == "" {
+			need = append(need, docs[i].ID)
+		}
+	}
+	if len(need) == 0 {
+		return nil
+	}
+	bodies, err := s.documentBodies(ctx, need)
+	if err != nil {
+		return err
+	}
+	for i := range docs {
+		if docs[i].Snippet == "" {
+			docs[i].Snippet = foldSnippet(bodies[docs[i].ID], query)
+		}
+	}
+	return nil
+}
+
+func (s *Store) documentBodies(ctx context.Context, ids []int64) (map[int64]string, error) {
+	out := map[int64]string{}
+	if len(ids) == 0 {
+		return out, nil
+	}
+	ph, args := inList(ids)
+	rows, err := s.q.QueryContext(ctx, `SELECT document_id, body FROM document_content WHERE document_id IN (`+ph+`)`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("load text for snippets: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int64
+		var body string
+		if err := rows.Scan(&id, &body); err != nil {
+			return nil, err
+		}
+		out[id] = body
+	}
+	return out, rows.Err()
+}
+
+// EnsureSearchIndex rebuilds every search entry when the folding rules have
+// changed, so existing documents match the way new ones do. It returns how
+// many documents were rewritten, or zero when the index is already current.
+func (s *Store) EnsureSearchIndex(ctx context.Context) (int, error) {
+	var version int
+	ok, err := s.GetJSON(ctx, searchFoldSetting, &version)
+	if err != nil {
+		return 0, err
+	}
+	if ok && version >= searchFoldVersion {
+		return 0, nil
+	}
+	rows, err := s.q.QueryContext(ctx, `SELECT id FROM documents ORDER BY id`)
+	if err != nil {
+		return 0, fmt.Errorf("list documents for search: %w", err)
+	}
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		ids = append(ids, id)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	if err := s.InTx(ctx, func(tx *Store) error {
+		for _, id := range ids {
+			if err := tx.SyncFTS(ctx, id); err != nil {
+				return err
+			}
+		}
+		return tx.PutJSON(ctx, searchFoldSetting, searchFoldVersion)
+	}); err != nil {
+		return 0, err
+	}
+	return len(ids), nil
 }
 
 // SetOCRStatus records the outcome of OCR without changing the text.

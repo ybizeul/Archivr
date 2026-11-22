@@ -84,7 +84,7 @@ SQLite runs in WAL mode, so a power loss can drop the last committed transaction
 
 ## Search
 
-`documents_fts` (FTS5) indexes title, OCR text, tags, type name, with accent folding (`remove_diacritics 2`). Queries are split into words and matched as prefixes, ANDed together. Syntax characters in user input are quoted, so a stray `"` or `*` cannot break the query. Results rank by `bm25`, and snippets come from `snippet()` with control characters as highlight markers, which the client renders as text, never HTML.
+`documents_fts` (FTS5) indexes title, OCR text, tags and type name, plus a `folded` copy of that text. The tokenizer strips accents (`unicode61 remove_diacritics 2`). The folded copy also expands ligatures and ignores stroke letters, and queries are folded the same way before they are matched, so `cœur` matches `coeur` and `ø` matches `o`. Queries are split into words and matched as prefixes, ANDed together. Syntax characters in user input are quoted, so a stray `"` or `*` cannot break the query. Results rank by `bm25` on the original columns (the folded column has weight 0), and snippets come from `snippet()` with control characters as highlight markers, which the client renders as text, never HTML. Folder, type, tag and correspondent pickers use the same folding in the browser.
 
 ## Web app
 

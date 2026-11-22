@@ -338,7 +338,7 @@ func TestOCRTextIsSearchableAndQueriesAreSafe(t *testing.T) {
 	ctx := context.Background()
 	doc := create(t, svc, "Bill", "g", 0)
 	if err := st.InTx(ctx, func(tx *store.Store) error {
-		if err := tx.SaveOCRText(ctx, doc.ID, "Facture électricité, montant 88 euros", "tesseract", "fra"); err != nil {
+		if err := tx.SaveOCRText(ctx, doc.ID, "Facture électricité, montant 88 euros, cœur", "tesseract", "fra"); err != nil {
 			return err
 		}
 		return tx.SyncFTS(ctx, doc.ID)
@@ -346,16 +346,19 @@ func TestOCRTextIsSearchableAndQueriesAreSafe(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Accents are removed on both sides, so the plain form finds the French word.
-	docs, total, err := st.ListDocuments(ctx, store.DocFilter{Query: "electricite"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if total != 1 || docs[0].ID != doc.ID {
-		t.Fatalf("electricite: total=%d", total)
-	}
-	if docs[0].Snippet == "" {
-		t.Fatal("expected a snippet from the OCR text")
+	// Accents and ligatures are folded on both sides, so the plain form finds
+	// the French word and the accented form finds the plain one.
+	for _, q := range []string{"electricite", "électricité", "coeur", "cœur"} {
+		docs, total, err := st.ListDocuments(ctx, store.DocFilter{Query: q})
+		if err != nil {
+			t.Fatalf("query %q: %v", q, err)
+		}
+		if total != 1 || docs[0].ID != doc.ID {
+			t.Fatalf("query %q: total=%d", q, total)
+		}
+		if docs[0].Snippet == "" {
+			t.Fatalf("query %q: expected a snippet", q)
+		}
 	}
 
 	// FTS operators in user input are treated as words, never as syntax.

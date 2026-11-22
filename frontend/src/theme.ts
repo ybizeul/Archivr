@@ -1,4 +1,5 @@
-import { Button, Tooltip, createTheme, type MantineColorsTuple } from '@mantine/core'
+import { Autocomplete, Button, MultiSelect, Select, TagsInput, Tooltip, createTheme, type MantineColorsTuple } from '@mantine/core'
+import { optionsFilter } from './lib/fold'
 
 // Cyanotype palette, from the approved design board.
 // Index 6 of each tuple is the approved value. Index 4 of prussian and carmine
@@ -59,5 +60,10 @@ export const theme = createTheme({
     Tooltip: Tooltip.extend({
       defaultProps: { withArrow: true },
     }),
+    // Folder, type, tag and correspondent pickers search without accents.
+    Select: Select.extend({ defaultProps: { filter: optionsFilter } }),
+    Autocomplete: Autocomplete.extend({ defaultProps: { filter: optionsFilter } }),
+    TagsInput: TagsInput.extend({ defaultProps: { filter: optionsFilter } }),
+    MultiSelect: MultiSelect.extend({ defaultProps: { filter: optionsFilter } }),
   },
 })

@@ -19,7 +19,7 @@ func (s *Store) ListCorrespondents(ctx context.Context, q string) ([]Corresponde
 	rows, err := s.q.QueryContext(ctx, `
 		SELECT c.id, c.name, COUNT(d.id)
 		  FROM correspondents c LEFT JOIN documents d ON d.correspondent_id = c.id
-		 WHERE instr(lower(c.name), lower(?)) > 0 OR ? = ''
+		 WHERE instr(unaccent(c.name), unaccent(?)) > 0 OR ? = ''
 		 GROUP BY c.id
 		 ORDER BY COUNT(d.id) DESC, c.name COLLATE NOCASE
 		 LIMIT 500`, q, q)

@@ -10,7 +10,7 @@ Documents arrive from a scanner folder, by email, or by upload. Each one gets a 
 
 - **Several ways in.** Drop files in a watch folder (a scanner or a sync tool), send them as email attachments, upload them in the browser, or import a whole [Paperless-ngx](#importing-from-paperless-ngx) library.
 - **Inbox for sorting.** New documents wait in the Inbox. Go through them one at a time, fill in the title, date, type, correspondent, tags and folder, and file them. Archivr suggests dates and titles it finds in the text. Keyboard shortcuts keep it fast, and **File all** handles the ticked ones in one go.
-- **Full-text search.** Search the text of every document, as well as titles, tags and correspondents. Accents are ignored, words match from their start, and results show where the words were found. Press `Ctrl/⌘ K` anywhere to search.
+- **Full-text search.** Search the text of every document, as well as titles, tags and correspondents. Accents and ligatures are ignored, words match from their start, and results show where the words were found. Press `Ctrl/⌘ K` anywhere to search.
 - **Text recognition.** Scans and photos are read with Tesseract, English and French by default, and PDFs with a text layer are used as they are. Languages and time limits are set in the Admin screen.
 - **Folders, types, tags.** Organise by folder, then narrow by type, tag, date range or recognition state. Switch between a list and a card view with page previews.
 - **Previews you can fix.** Open any document in the browser and turn it if it was scanned sideways. The file itself is never changed.

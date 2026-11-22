@@ -61,6 +61,11 @@ func run(log *slog.Logger) error {
 	log.Info("database ready", "path", cfg.DBPath)
 
 	st := store.New(conn)
+	if n, err := st.EnsureSearchIndex(ctx); err != nil {
+		return err
+	} else if n > 0 {
+		log.Info("search index rebuilt", "documents", n)
+	}
 	if err := auth.EnsureBootstrapAdmin(ctx, st, cfg.InitAdminEmail, cfg.InitPassword); err != nil {
 		return err
 	}
