@@ -11,6 +11,7 @@ import { DeleteDocumentDialog } from '../components/DeleteDocumentDialog'
 import { DocViewer } from '../components/DocViewer'
 import { LibraryBrowser } from '../components/LibraryBrowser'
 import { NewFolder } from '../components/NewFolder'
+import { ReplaceFileButton } from '../components/ReplaceFileButton'
 import { ShareDialog } from '../components/ShareDialog'
 import { SheetBar } from '../components/SheetBar'
 import { TagsField } from '../components/TagsField'
@@ -220,6 +221,7 @@ function DocumentView({ doc, libraryLocation }: { doc: DocumentDetail; libraryLo
           >
             Share
           </Button>
+          <ReplaceFileButton docId={doc.id} />
           <Button variant="subtle" color="oxide" size="xs" onClick={() => setConfirmDelete(true)}>
             {inTrash ? 'Delete permanently' : 'Delete'}
           </Button>
@@ -229,7 +231,15 @@ function DocumentView({ doc, libraryLocation }: { doc: DocumentDetail; libraryLo
       <div className="ax-detail-grid">
         <Box className="ax-sheet ax-detail-sheet">
           <SheetBar id={doc.id} />
-          <DocViewer key={doc.id} id={doc.id} mime={doc.mime} title={doc.title} rotation={doc.rotation} />
+          {/* The hash changes when the file is replaced, so the viewer reloads it. */}
+          <DocViewer
+            key={`${doc.id}-${doc.sha256}`}
+            src={`/api/v1/documents/${doc.id}/file?v=${doc.sha256.slice(0, 12)}`}
+            id={doc.id}
+            mime={doc.mime}
+            title={doc.title}
+            rotation={doc.rotation}
+          />
         </Box>
 
         <Stack gap="lg" className="ax-detail-side">

@@ -416,6 +416,78 @@ func (s *Service) Update(ctx context.Context, id int64, p Patch) (store.Document
 	return out, nil
 }
 
+// ReplaceFile swaps the file behind a document for new bytes. The number, title, folder, tags and
+// other details stay; the extracted text is dropped and OCR runs again. The old file moves into the
+// trash directory inside the transaction and is removed only after the commit; a failed commit
+// puts it back. It returns a DuplicateError when another document already holds the bytes.
+func (s *Service) ReplaceFile(ctx context.Context, id int64, data []byte, mime string) (store.Document, error) {
+	if len(data) == 0 {
+		return store.Document{}, invalid("file is empty")
+	}
+	var out store.Document
+	var backup, oldFile, newFile string
+	moved, written := false, false
+	err := s.Store.InTx(ctx, func(tx *store.Store) error {
+		cur, err := tx.GetDocument(ctx, id)
+		if err != nil {
+			return err
+		}
+		sha := sha256Hex(data)
+		if existing, err := tx.DocumentBySHA(ctx, sha); err == nil {
+			if existing.ID == id {
+				return invalid("this is the same file the document already has")
+			}
+			return &DuplicateError{Document: existing}
+		}
+		filename := storage.DocumentFilename(id, cur.Title, storage.ExtFor(mime))
+		if oldFile, err = s.Layout.DocumentFile(cur.Folder.Path, cur.Filename); err != nil {
+			return err
+		}
+		if newFile, err = s.Layout.DocumentFile(cur.Folder.Path, filename); err != nil {
+			return err
+		}
+		if err := tx.ReplaceDocumentFile(ctx, id, filename, mime, int64(len(data)), sha); err != nil {
+			return err
+		}
+		if err := tx.SyncFTS(ctx, id); err != nil {
+			return err
+		}
+		if out, err = tx.GetDocument(ctx, id); err != nil {
+			return err
+		}
+
+		// The files change last, so only Commit can fail after them.
+		backup = filepath.Join(s.Layout.TrashDir(),
+			fmt.Sprintf("%d-%d-replaced-%s", id, s.now().UnixNano(), cur.Filename))
+		if err := storage.MoveFile(oldFile, backup); err != nil {
+			return err
+		}
+		moved = true
+		if err := storage.WriteFileAtomic(newFile, data); err != nil {
+			return err
+		}
+		written = true
+		return nil
+	})
+	if err != nil {
+		if written {
+			_ = storage.RemoveFile(newFile)
+		}
+		if moved {
+			s.undoMove("replace document file", id, storage.MoveFile, backup, oldFile)()
+		}
+		return store.Document{}, err
+	}
+	if err := storage.RemoveFile(backup); err != nil {
+		s.logger().Warn("could not remove the replaced file", "path", backup, "error", err)
+	}
+	s.writeSidecar(out)
+	if s.OCR != nil {
+		s.OCR.Enqueue(out.ID)
+	}
+	return out, nil
+}
+
 // undoMove returns a closure that puts a moved file or folder back from "now" to
 // "orig". It never discards a failure: if the move back fails, the tree and the
 // database disagree, so it logs at error level. The startup reconciler repairs that.

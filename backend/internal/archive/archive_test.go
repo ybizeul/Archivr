@@ -106,6 +106,67 @@ func TestSameBytesAreRejectedAsDuplicate(t *testing.T) {
 	}
 }
 
+func TestReplaceFileKeepsNumberAndDetailsAndSwapsTheBytes(t *testing.T) {
+	svc, st, layout := newService(t)
+	ctx := context.Background()
+	doc := create(t, svc, "Contract", "old", 0)
+	other := create(t, svc, "Other", "other", 0)
+	if err := st.SaveOCRText(ctx, doc.ID, "old words", "tesseract", "eng"); err != nil {
+		t.Fatal(err)
+	}
+	rot := 90
+	tags := []string{"keep"}
+	if _, err := svc.Update(ctx, doc.ID, Patch{Rotation: &rot, Tags: &tags}); err != nil {
+		t.Fatal(err)
+	}
+
+	png := []byte("\x89PNG\r\n\x1a\nnew")
+	got, err := svc.ReplaceFile(ctx, doc.ID, png, "image/png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ID != doc.ID || got.Title != "Contract" || len(got.Tags) != 1 || got.Tags[0] != "keep" {
+		t.Fatalf("details changed: %+v", got)
+	}
+	if got.Mime != "image/png" || got.Size != int64(len(png)) || got.SHA256 == doc.SHA256 {
+		t.Fatalf("file fields not updated: %+v", got)
+	}
+	if got.Rotation != 0 || got.OCRStatus != "pending" {
+		t.Fatalf("rotation = %d, ocr = %q", got.Rotation, got.OCRStatus)
+	}
+	if text, _ := st.DocumentText(ctx, doc.ID); text != "" {
+		t.Fatalf("old text kept: %q", text)
+	}
+	if exists(t, mustFile(t, layout, "INBOX", doc.Filename)) {
+		t.Fatal("old file still on disk")
+	}
+	if exists(t, mustFile(t, layout, "INBOX", doc.Filename)+".archivr.json") {
+		t.Fatal("old sidecar still on disk")
+	}
+	newPath := mustFile(t, layout, "INBOX", got.Filename)
+	if data, err := os.ReadFile(newPath); err != nil || string(data) != string(png) {
+		t.Fatalf("new file = %q, %v", data, err)
+	}
+	if !exists(t, newPath+".archivr.json") {
+		t.Fatal("sidecar missing for the new file")
+	}
+	if entries, _ := os.ReadDir(layout.TrashDir()); len(entries) != 0 {
+		t.Fatalf("trash directory not cleaned: %v", entries)
+	}
+
+	// The same bytes, or bytes another document holds, are refused and change nothing.
+	if _, err := svc.ReplaceFile(ctx, doc.ID, png, "image/png"); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("same file: err = %v, want ErrInvalid", err)
+	}
+	var dup *DuplicateError
+	if _, err := svc.ReplaceFile(ctx, doc.ID, pdfBytes("other"), "application/pdf"); !errors.As(err, &dup) || dup.Document.ID != other.ID {
+		t.Fatalf("duplicate: err = %v", err)
+	}
+	if !exists(t, newPath) {
+		t.Fatal("a refused replace removed the current file")
+	}
+}
+
 func TestUpdateRenamesAndMovesFileWithSidecar(t *testing.T) {
 	svc, st, layout := newService(t)
 	ctx := context.Background()

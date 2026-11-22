@@ -339,6 +339,31 @@ func (s *Store) SaveDocumentFields(ctx context.Context, id int64, f DocFields) e
 	return nil
 }
 
+// ReplaceDocumentFile points a document at new bytes. The extracted text is dropped and OCR
+// goes back to pending, the rotation is reset, and earlier import records stop pointing at the
+// document so the file it used to hold can be imported again. The caller re-syncs the search entry.
+func (s *Store) ReplaceDocumentFile(ctx context.Context, id int64, filename, mime string, size int64, sha string) error {
+	res, err := s.q.ExecContext(ctx, `
+		UPDATE documents
+		   SET filename = ?, mime = ?, size = ?, sha256 = ?, rotation = 0,
+		       ocr_status = 'pending', ocr_error = '',
+		       updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+		 WHERE id = ?`, filename, mime, size, sha, id)
+	if err != nil {
+		return fmt.Errorf("replace document file: %w", mapErr(err))
+	}
+	if n, err := res.RowsAffected(); err == nil && n == 0 {
+		return ErrNotFound
+	}
+	if _, err := s.q.ExecContext(ctx, `DELETE FROM document_content WHERE document_id = ?`, id); err != nil {
+		return fmt.Errorf("clear extracted text: %w", err)
+	}
+	if _, err := s.q.ExecContext(ctx, `UPDATE ingest_log SET document_id = NULL WHERE document_id = ?`, id); err != nil {
+		return fmt.Errorf("release import records: %w", err)
+	}
+	return nil
+}
+
 // SetDocumentTags replaces a document's tags.
 func (s *Store) SetDocumentTags(ctx context.Context, id int64, names []string) error {
 	return s.setTags(ctx, id, names)

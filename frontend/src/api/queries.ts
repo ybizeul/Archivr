@@ -276,6 +276,24 @@ export function useUploadDocument() {
   })
 }
 
+/** Swaps the file behind a document. Its number, title, folder and tags stay; OCR runs again. */
+export function useReplaceFile() {
+  const invalidate = useInvalidateDocuments()
+  return useMutation({
+    mutationFn: async ({ id, file }: { id: number; file: File }) => {
+      const body = new FormData()
+      body.append('file', file)
+      const res = await fetch(`/api/v1/documents/${id}/file`, { method: 'PUT', body, credentials: 'same-origin' })
+      if (!res.ok) {
+        const payload = (await res.json().catch(() => ({}))) as { error?: { code?: string; message?: string } }
+        throw new Error(payload.error?.message ?? 'Replacing the file failed')
+      }
+      return (await res.json()) as Document
+    },
+    onSuccess: () => invalidate(),
+  })
+}
+
 export function useReOCR() {
   const qc = useQueryClient()
   return useMutation({

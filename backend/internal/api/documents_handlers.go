@@ -215,6 +215,47 @@ func (s *server) uploadDocument(w http.ResponseWriter, r *http.Request, _ store.
 	}
 }
 
+// replaceDocumentFile swaps the stored file for a new upload (multipart field: file). The document keeps
+// its number, title, folder and tags; the text is read again.
+func (s *server) replaceDocumentFile(w http.ResponseWriter, r *http.Request, _ store.User) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes)
+	if err := r.ParseMultipartForm(8 << 20); err != nil {
+		var tooBig *http.MaxBytesError
+		if errors.As(err, &tooBig) {
+			writeError(w, http.StatusRequestEntityTooLarge, "TOO_LARGE", "file is larger than 100 MB")
+			return
+		}
+		writeError(w, http.StatusBadRequest, "INVALID", "expected a multipart form with a file field")
+		return
+	}
+	file, _, err := r.FormFile("file")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID", "choose a file to upload")
+		return
+	}
+	defer file.Close()
+	data, err := io.ReadAll(file)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID", "could not read the file")
+		return
+	}
+	mimeType, reason := ingest.SniffMIME(data)
+	if mimeType == "" {
+		writeError(w, http.StatusUnsupportedMediaType, "UNSUPPORTED_TYPE", reason)
+		return
+	}
+	doc, err := s.Archive.ReplaceFile(r.Context(), id, data, mimeType)
+	if err != nil {
+		s.writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, doc)
+}
+
 // documentFile streams the stored file. It is served inline, so the browser can show it.
 func (s *server) documentFile(w http.ResponseWriter, r *http.Request, _ store.User) {
 	id, ok := pathID(w, r)

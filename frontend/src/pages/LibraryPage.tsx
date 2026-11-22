@@ -478,7 +478,7 @@ function DocumentGrid({
             <div className="ax-doc-tile-thumb">
               <img
                 data-turn={d.rotation || undefined}
-                src={`/api/v1/documents/${d.id}/thumbnail`}
+                src={`/api/v1/documents/${d.id}/thumbnail?v=${d.sha256.slice(0, 12)}`}
                 alt=""
                 loading="lazy"
                 onError={(e) => {
