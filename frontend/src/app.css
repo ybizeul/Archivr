@@ -103,6 +103,26 @@ html[data-mantine-color-scheme='dark'] .mantine-Button-root[data-variant='filled
   min-width: 168px;
 }
 
+/* The name is the account menu. Keep it short so the brand and actions still fit. */
+.ax-user-menu {
+  max-width: 7.5rem;
+  min-width: 0;
+  flex-shrink: 1;
+}
+
+.ax-user-menu .mantine-Button-label {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+@media (min-width: 48em) {
+  .ax-user-menu {
+    max-width: 11.25rem;
+  }
+}
+
 .ax-global-search {
   width: 100%;
 }

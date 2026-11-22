@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { ActionIcon, AppShell, Badge, Box, Button, Group, Menu, Text, TextInput, Tooltip } from '@mantine/core'
 import { useDebouncedValue, useMediaQuery } from '@mantine/hooks'
 import { Spotlight, spotlight, type SpotlightActionData } from '@mantine/spotlight'
-import { IconCalendar, IconCheck, IconFolders, IconInbox, IconLogout, IconSearch, IconSettings } from '@tabler/icons-react'
+import { IconCalendar, IconCheck, IconChevronDown, IconChevronLeft, IconFolders, IconInbox, IconLogout, IconSearch, IconSettings } from '@tabler/icons-react'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/context'
 import { useDocuments, useInboxCount } from '../api/queries'
@@ -11,19 +11,11 @@ import { browserLocale, datePattern, folderLabel, formatDate, formatDateInput } 
 import { UploadButton } from './UploadButton'
 
 export function AppLayout() {
-  const { user, logout } = useAuth()
+  const { user } = useAuth()
   const { pathname } = useLocation()
   const inbox = useInboxCount()
-  const navigate = useNavigate()
   const dateLocalePref = useDateLocalePref()
   const isMobile = useMediaQuery('(max-width: 767px)', undefined, { getInitialValueInEffect: false }) ?? false
-
-  // With SSO, end the provider session too. Otherwise just go to the login page.
-  const signOut = async () => {
-    const providerLogout = await logout()
-    if (providerLogout) window.location.assign(providerLogout)
-    else navigate('/login')
-  }
 
   const nav = [
     { to: '/inbox', label: 'Inbox', icon: <IconInbox size={22} stroke={1.6} />, active: pathname === '/inbox', count: inbox.data?.count },
@@ -96,15 +88,7 @@ export function AppLayout() {
             <Box hiddenFrom="sm">
               <UploadButton compact />
             </Box>
-            <DateFormatMenu />
-            <Text size="sm" c="dimmed" truncate maw={180} visibleFrom="md">
-              {user?.name || user?.email}
-            </Text>
-            <Tooltip label="Sign out">
-              <ActionIcon variant="subtle" color="gray" aria-label="Sign out" onClick={() => void signOut()}>
-                <IconLogout size={18} stroke={1.6} />
-              </ActionIcon>
-            </Tooltip>
+            <UserMenu />
           </Group>
         </Box>
       </AppShell.Header>
@@ -139,39 +123,73 @@ export function AppLayout() {
   )
 }
 
-/** Picks the language and order dates use, for browsers that do not report the system region. */
-function DateFormatMenu() {
+/** Account menu. Date format lives here because browsers do not report the system region. */
+function UserMenu() {
+  const { user, logout } = useAuth()
+  const navigate = useNavigate()
   const chosen = useDateLocalePref()
+  const [formatOpen, setFormatOpen] = useState(false)
   const sample = '2026-08-11'
-  const options = [
-    { value: '', label: 'Browser default' },
-    ...DATE_LOCALES,
-  ]
+  const options = [{ value: '', label: 'Browser default' }, ...DATE_LOCALES]
+  const name = user?.name?.trim()
+  const email = user?.email
+  const label = name || email || 'Account'
+
+  const signOut = async () => {
+    const providerLogout = await logout()
+    if (providerLogout) window.location.assign(providerLogout)
+    else navigate('/login')
+  }
+
   return (
-    <Menu position="bottom-end" width={240} withinPortal>
-      <Tooltip label="Date format">
-        <Menu.Target>
-          <ActionIcon variant="subtle" color="gray" aria-label="Date format">
-            <IconCalendar size={18} stroke={1.6} />
-          </ActionIcon>
-        </Menu.Target>
-      </Tooltip>
+    <Menu
+      position="bottom-end"
+      width={220}
+      withinPortal
+      onChange={(opened) => {
+        if (!opened) setFormatOpen(false)
+      }}
+    >
+      <Menu.Target>
+        <Button variant="subtle" color="gray" size="xs" className="ax-user-menu" rightSection={<IconChevronDown size={14} stroke={1.6} />}>
+          {label}
+        </Button>
+      </Menu.Target>
       <Menu.Dropdown>
-        <Menu.Label>Date format</Menu.Label>
-        {options.map((o) => (
-          <Menu.Item
-            key={o.value}
-            onClick={() => setDateLocalePref(o.value)}
-            leftSection={o.value === chosen ? <IconCheck size={14} /> : <Box w={14} />}
-            rightSection={
-              <Text size="xs" c="dimmed" className="ax-mono">
-                {formatDateInput(sample, datePattern(o.value || browserLocale()))}
-              </Text>
-            }
-          >
-            {o.label}
-          </Menu.Item>
-        ))}
+        {name && email ? (
+          <Menu.Label>
+            <Text size="xs" truncate>
+              {email}
+            </Text>
+          </Menu.Label>
+        ) : null}
+        <Menu.Sub opened={formatOpen} onChange={setFormatOpen} position="left-start" width={260}>
+          <Menu.Sub.Target>
+            <Menu.Sub.Item leftSection={<IconCalendar size={16} stroke={1.6} />} rightSection={<IconChevronLeft size={14} stroke={1.6} />} onClick={() => setFormatOpen(true)}>
+              Date format
+            </Menu.Sub.Item>
+          </Menu.Sub.Target>
+          <Menu.Sub.Dropdown>
+            {options.map((o) => (
+              <Menu.Item
+                key={o.value || 'browser'}
+                onClick={() => setDateLocalePref(o.value)}
+                leftSection={o.value === chosen ? <IconCheck size={14} /> : <Box w={14} />}
+                rightSection={
+                  <Text size="xs" c="dimmed" className="ax-mono">
+                    {formatDateInput(sample, datePattern(o.value || browserLocale()))}
+                  </Text>
+                }
+              >
+                {o.label}
+              </Menu.Item>
+            ))}
+          </Menu.Sub.Dropdown>
+        </Menu.Sub>
+        <Menu.Divider />
+        <Menu.Item leftSection={<IconLogout size={16} stroke={1.6} />} onClick={() => void signOut()}>
+          Sign out
+        </Menu.Item>
       </Menu.Dropdown>
     </Menu>
   )
