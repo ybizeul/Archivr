@@ -149,7 +149,7 @@ html[data-mantine-color-scheme='dark'] .mantine-Button-root[data-variant='filled
   white-space: nowrap;
 }
 
-/* The viewer: a tool row above the file. Rotation is applied here, with CSS only. */
+/* The viewer: a tool row above the file. Rotation is applied when drawing, never by turning the scroll area. */
 .ax-viewer {
   flex: 1;
   display: flex;
@@ -162,24 +162,7 @@ html[data-mantine-color-scheme='dark'] .mantine-Button-root[data-variant='filled
   padding: 0 12px 8px;
 }
 
-/* The PDF stage is a size container, so the frame can be sized from it when turned a quarter. */
-.ax-viewer-stage {
-  position: relative;
-  flex: 1;
-  min-height: 0;
-  container-type: size;
-  overflow: hidden;
-  background: var(--ax-mist);
-}
-
-.ax-viewer-frame {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  border: 0;
-  background: var(--ax-mist);
-}
-
+/* Images and PDF pages share this scroll area; it is never turned, so panning follows the screen. */
 .ax-viewer-image {
   flex: 1;
   min-height: 0;

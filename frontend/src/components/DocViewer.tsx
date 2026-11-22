@@ -1,10 +1,13 @@
-import { useState, type CSSProperties } from 'react'
-import { ActionIcon, Box, Group, Tooltip } from '@mantine/core'
+import { lazy, Suspense, useState, type CSSProperties } from 'react'
+import { ActionIcon, Box, Group, Loader, Tooltip } from '@mantine/core'
 import { useElementSize } from '@mantine/hooks'
 import { notifications } from '@mantine/notifications'
 import { IconRotate, IconRotateClockwise, IconZoomIn, IconZoomOut } from '@tabler/icons-react'
 import { usePatchDocument } from '../api/queries'
 import { errorMessage } from '../lib/format'
+
+/** pdf.js is large, so it loads only when a PDF is shown. */
+const PdfStage = lazy(() => import('./PdfStage').then((m) => ({ default: m.PdfStage })))
 
 interface DocViewerProps {
   /** The document to show. Not needed when `src` is given. */
@@ -22,7 +25,7 @@ interface DocViewerProps {
 const normalise = (deg: number) => ((deg % 360) + 360) % 360
 
 /**
- * Shows the stored file: PDFs in the browser's own viewer, images with a click-to-zoom.
+ * Shows the stored file: PDFs drawn with pdf.js, images with a click-to-zoom.
  * The rotate buttons turn the view and remember the turn on the document. The file itself
  * is never changed: rotation is only a hint for how the browser draws it.
  */
@@ -76,30 +79,13 @@ export function DocViewer({ id, src: srcProp, mime, title, rotation = 0, readOnl
         )}
       </Group>
       {isPdf ? (
-        <PdfStage src={src} title={id === undefined ? title : `Document ${id}: ${title}`} turn={turn} />
+        <Suspense fallback={<Loader size="sm" m={12} />}>
+          <PdfStage src={src} title={id === undefined ? title : `Document ${id}: ${title}`} turn={turn} />
+        </Suspense>
       ) : (
         <ImageStage src={src} title={title} turn={turn} zoomed={zoomed} onToggleZoom={() => setZoomed((z) => !z)} />
       )}
     </Box>
-  )
-}
-
-/** A PDF turned with CSS. A quarter turn swaps the frame's width and height, so it still fills the stage. */
-function PdfStage({ src, title, turn }: { src: string; title: string; turn: number }) {
-  const sideways = turn === 90 || turn === 270
-  return (
-    <div className="ax-viewer-stage">
-      <iframe
-        className="ax-viewer-frame"
-        src={`${src}#navpanes=0&view=FitH`}
-        title={title}
-        style={{
-          width: sideways ? '100cqh' : '100cqw',
-          height: sideways ? '100cqw' : '100cqh',
-          transform: `translate(-50%, -50%) rotate(${turn}deg)`,
-        }}
-      />
-    </div>
   )
 }
 
