@@ -142,6 +142,7 @@ func NewRouter(d Deps) http.Handler {
 	mux.HandleFunc("GET /api/v1/admin/settings/imap/mailboxes", s.authed(true, s.listMailboxes))
 	mux.HandleFunc("GET /api/v1/admin/settings/ocr", s.authed(true, s.getOCRSettings))
 	mux.HandleFunc("PUT /api/v1/admin/settings/ocr", s.authed(true, s.putOCRSettings))
+	mux.HandleFunc("POST /api/v1/admin/ocr/run-missing", s.authed(true, s.runMissingOCR))
 	mux.HandleFunc("GET /api/v1/admin/settings/paperless", s.authed(true, s.getPaperlessSettings))
 	mux.HandleFunc("PUT /api/v1/admin/settings/paperless", s.authed(true, s.putPaperlessSettings))
 	mux.HandleFunc("POST /api/v1/admin/settings/paperless/test", s.authed(true, s.testPaperless))

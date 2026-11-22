@@ -151,6 +151,71 @@ func TestSearchFindsOCRTextAndSuggestsDates(t *testing.T) {
 	}
 }
 
+func TestRunMissingOCRQueuesOnlyDocumentsWithoutText(t *testing.T) {
+	f := newFixture(t)
+	reader := readerCookie(t, f)
+	admin := adminCookie(t, f)
+	ctx := context.Background()
+
+	ids := map[string]int64{}
+	for _, name := range []string{"failed", "skipped", "good", "empty"} {
+		var doc struct {
+			ID int64 `json:"id"`
+		}
+		decodeInto(t, f.upload(reader, name+".pdf", pdfData(name), ""), &doc)
+		ids[name] = doc.ID
+	}
+	if err := f.store.InTx(ctx, func(tx *store.Store) error {
+		if err := tx.SetOCRStatus(ctx, ids["failed"], "failed", "boom"); err != nil {
+			return err
+		}
+		if err := tx.SetOCRStatus(ctx, ids["skipped"], "skipped", "no tesseract"); err != nil {
+			return err
+		}
+		if err := tx.SaveOCRText(ctx, ids["good"], "some text", "tesseract", "eng"); err != nil {
+			return err
+		}
+		return tx.SetOCRStatus(ctx, ids["empty"], "done", "")
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if rec := f.do(http.MethodPost, "/api/v1/admin/ocr/run-missing", nil, reader); rec.Code != http.StatusForbidden {
+		t.Fatalf("non-admin status = %d", rec.Code)
+	}
+
+	rec := f.do(http.MethodPost, "/api/v1/admin/ocr/run-missing", nil, admin)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d body %s", rec.Code, rec.Body.String())
+	}
+	var out struct {
+		Queued int `json:"queued"`
+	}
+	decodeInto(t, rec, &out)
+	if out.Queued != 3 {
+		t.Fatalf("queued = %d, want 3", out.Queued)
+	}
+
+	status := func(name string) string {
+		doc, err := f.store.GetDocument(ctx, ids[name])
+		if err != nil {
+			t.Fatal(err)
+		}
+		return doc.OCRStatus
+	}
+	for name, want := range map[string]string{"failed": "pending", "skipped": "pending", "empty": "pending", "good": "done"} {
+		if got := status(name); got != want {
+			t.Errorf("%s status = %q, want %q", name, got, want)
+		}
+	}
+
+	again := f.do(http.MethodPost, "/api/v1/admin/ocr/run-missing", nil, admin)
+	decodeInto(t, again, &out)
+	if out.Queued != 0 {
+		t.Fatalf("second run queued %d, want 0", out.Queued)
+	}
+}
+
 func TestFilingUpdatesDocumentAndDeleteRemovesIt(t *testing.T) {
 	f := newFixture(t)
 	c := readerCookie(t, f)

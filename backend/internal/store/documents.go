@@ -461,6 +461,33 @@ func (s *Store) PendingOCR(ctx context.Context, limit int) ([]int64, error) {
 	return ids, rows.Err()
 }
 
+// missingOCRWhere selects documents that have no usable OCR result: OCR failed or
+// was skipped, or it finished but no text row was stored.
+const missingOCRWhere = `(ocr_status IN ('failed', 'skipped')
+	OR (ocr_status = 'done'
+	    AND NOT EXISTS (SELECT 1 FROM document_content c WHERE c.document_id = documents.id AND c.body <> '')))`
+
+// CountMissingOCR returns how many documents have no usable OCR result.
+func (s *Store) CountMissingOCR(ctx context.Context) (int, error) {
+	var n int
+	if err := s.q.QueryRowContext(ctx, `SELECT COUNT(*) FROM documents WHERE `+missingOCRWhere).Scan(&n); err != nil {
+		return 0, fmt.Errorf("count missing ocr: %w", err)
+	}
+	return n, nil
+}
+
+// MarkMissingOCRPending sets every document without a usable OCR result back to
+// pending and returns how many it changed.
+func (s *Store) MarkMissingOCRPending(ctx context.Context) (int, error) {
+	res, err := s.q.ExecContext(ctx,
+		`UPDATE documents SET ocr_status = 'pending', ocr_error = '' WHERE `+missingOCRWhere)
+	if err != nil {
+		return 0, fmt.Errorf("mark missing ocr pending: %w", err)
+	}
+	n, err := res.RowsAffected()
+	return int(n), err
+}
+
 // IngestSeen reports whether this source, reference and hash were imported and the
 // document still exists. A document deleted since then clears its log link, so the
 // same file can be imported again.

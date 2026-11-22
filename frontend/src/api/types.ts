@@ -213,4 +213,5 @@ export interface OCRSettings {
   poppler: boolean
   installed_languages: string[]
   missing_languages: string[]
+  documents_missing_ocr: number
 }

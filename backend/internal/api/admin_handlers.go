@@ -131,6 +131,7 @@ type ocrView struct {
 	Poppler            bool     `json:"poppler"`
 	InstalledLanguages []string `json:"installed_languages"`
 	MissingLanguages   []string `json:"missing_languages"`
+	DocumentsMissing   int      `json:"documents_missing_ocr"`
 }
 
 func (s *server) ocrStatusView(r *http.Request, settings ocr.Settings) ocrView {
@@ -145,7 +146,12 @@ func (s *server) ocrStatusView(r *http.Request, settings ocr.Settings) ocrView {
 			missing = append(missing, l)
 		}
 	}
+	missingDocs, err := s.Store.CountMissingOCR(r.Context())
+	if err != nil {
+		s.Log.Error("count documents missing ocr", "error", err)
+	}
 	return ocrView{
+		DocumentsMissing:   missingDocs,
 		Settings:           settings,
 		Tesseract:          st.Tesseract,
 		TesseractVersion:   st.TesseractVersion,
@@ -179,6 +185,16 @@ func (s *server) putOCRSettings(w http.ResponseWriter, r *http.Request, _ store.
 		return
 	}
 	writeJSON(w, http.StatusOK, s.ocrStatusView(r, next))
+}
+
+// runMissingOCR queues OCR for every document that has no usable OCR result.
+func (s *server) runMissingOCR(w http.ResponseWriter, r *http.Request, _ store.User) {
+	n, err := s.OCR.ReprocessMissing(r.Context())
+	if err != nil {
+		s.writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]any{"queued": n})
 }
 
 func (s *server) listUsers(w http.ResponseWriter, r *http.Request, _ store.User) {

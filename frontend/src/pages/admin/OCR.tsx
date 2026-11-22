@@ -34,6 +34,18 @@ function OCRForm({ initial }: { initial: OCRSettings }) {
     onError: (err) => notifications.show({ color: 'red', title: "Couldn't save", message: errorMessage(err) }),
   })
 
+  const runMissing = useMutation({
+    mutationFn: () => api.post<{ queued: number }>('/admin/ocr/run-missing'),
+    onSuccess: ({ queued }) => {
+      notifications.show({
+        color: 'prussian',
+        message: queued === 0 ? 'No documents are missing OCR' : `OCR queued for ${queued} document${queued === 1 ? '' : 's'}`,
+      })
+      void qc.invalidateQueries({ queryKey: keys.adminOCR })
+    },
+    onError: (err) => notifications.show({ color: 'red', title: "Couldn't start OCR", message: errorMessage(err) }),
+  })
+
   return (
     <Stack maw={620} gap="md">
       <Stack gap={6}>
@@ -102,6 +114,26 @@ function OCRForm({ initial }: { initial: OCRSettings }) {
           Save OCR settings
         </Button>
       </Group>
+
+      <Stack gap={6}>
+        <Text fw={600}>Documents without text</Text>
+        <Text size="sm" c="dimmed">
+          {initial.documents_missing_ocr === 0
+            ? 'Every document has OCR text.'
+            : `${initial.documents_missing_ocr} document${initial.documents_missing_ocr === 1 ? ' has' : 's have'} no OCR text: OCR failed, was skipped, or found nothing.`}{' '}
+          Save your settings first, then run OCR on them.
+        </Text>
+        <Group>
+          <Button
+            variant="default"
+            onClick={() => runMissing.mutate()}
+            loading={runMissing.isPending}
+            disabled={initial.documents_missing_ocr === 0 || !initial.tesseract}
+          >
+            Run OCR on documents without text
+          </Button>
+        </Group>
+      </Stack>
     </Stack>
   )
 }

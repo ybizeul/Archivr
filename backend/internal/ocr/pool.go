@@ -204,6 +204,26 @@ func (p *Pool) Reprocess(ctx context.Context, id int64) error {
 	return nil
 }
 
+// ReprocessMissing marks every document without a usable OCR result pending and
+// queues as many as fit right away. The scanner picks up the rest. It returns how
+// many documents were marked.
+func (p *Pool) ReprocessMissing(ctx context.Context) (int, error) {
+	n, err := p.Store.MarkMissingOCRPending(ctx)
+	if err != nil {
+		return 0, err
+	}
+	if n > 0 {
+		ids, err := p.Store.PendingOCR(ctx, queueSize)
+		if err != nil {
+			return n, err
+		}
+		for _, id := range ids {
+			p.Enqueue(id)
+		}
+	}
+	return n, nil
+}
+
 func truncate(s string) string {
 	if len(s) > maxErrLen {
 		return s[:maxErrLen]
