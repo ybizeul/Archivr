@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Alert, Anchor, Autocomplete, Badge, Box, Button, CopyButton, Group, Loader, ScrollArea, Select, Stack, TagsInput, Text, TextInput, Title, ActionIcon, Tooltip } from '@mantine/core'
+import { useMediaQuery } from '@mantine/hooks'
 import { notifications } from '@mantine/notifications'
 import { IconArrowLeft, IconCopy, IconCheck, IconShare } from '@tabler/icons-react'
 import { useCorrespondents, useDocument, useFolders, usePatchDocument, useReOCR, useTags, useTypes } from '../api/queries'
@@ -8,37 +9,73 @@ import type { DocumentDetail } from '../api/types'
 import { DateField } from '../components/DateField'
 import { DeleteDocumentDialog } from '../components/DeleteDocumentDialog'
 import { DocViewer } from '../components/DocViewer'
+import { LibraryBrowser } from '../components/LibraryBrowser'
 import { ShareDialog } from '../components/ShareDialog'
 import { SheetBar } from '../components/SheetBar'
 import { errorMessage, folderTitle, formatBytes, formatDate, formatDateTime, isTrash, OCR_LABEL, todayISO } from '../lib/format'
+import { useLibraryLocation } from '../lib/libraryLocation'
 
+/** A document opens beside the library's folder tree (except on phones), so the user keeps their place. */
 export function DocumentPage() {
   const { id: rawId } = useParams()
   const id = Number(rawId)
   const doc = useDocument(Number.isFinite(id) && id > 0 ? id : undefined)
+  const navigate = useNavigate()
+  const libraryLocation = useLibraryLocation()
+  const isMobile = useMediaQuery('(max-width: 767px)', undefined, { getInitialValueInEffect: false }) ?? false
 
+  // The folder and tag the user came from stay highlighted in the tree.
+  const remembered = new URLSearchParams(libraryLocation.split('?')[1] ?? '')
+  const folder = Number(remembered.get('folder')) || undefined
+  const tag = remembered.get('tag') ?? ''
+
+  let content
   if (doc.isPending) {
-    return (
+    content = (
       <Box p="xl">
         <Loader size="sm" />
       </Box>
     )
-  }
-  if (doc.isError || !doc.data) {
-    return (
+  } else if (doc.isError || !doc.data) {
+    content = (
       <Stack p="xl" maw={480}>
         <Title order={3}>No such document</Title>
         <Text c="dimmed">It may have been deleted. Check the number and try again.</Text>
-        <Anchor component={Link} to="/library">
+        <Anchor component={Link} to={libraryLocation}>
           Back to the library
         </Anchor>
       </Stack>
     )
+  } else {
+    content = <DocumentView key={doc.data.id} doc={doc.data} libraryLocation={libraryLocation} />
   }
-  return <DocumentView key={doc.data.id} doc={doc.data} />
+
+  if (isMobile) return content
+
+  const goLibrary = (changes: { folder?: number; tag?: string }) => {
+    const next = new URLSearchParams()
+    if (changes.folder) next.set('folder', String(changes.folder))
+    if (changes.tag) next.set('tag', changes.tag)
+    const search = next.toString()
+    navigate(`/library${search ? `?${search}` : ''}`)
+  }
+
+  return (
+    <Box className="ax-library ax-library-doc">
+      <Box className="ax-library-side">
+        <LibraryBrowser
+          folder={folder}
+          tag={tag}
+          onFolder={(f) => goLibrary({ folder: f })}
+          onTag={(t) => goLibrary({ folder, tag: t })}
+        />
+      </Box>
+      <Box className="ax-library-main">{content}</Box>
+    </Box>
+  )
 }
 
-function DocumentView({ doc }: { doc: DocumentDetail }) {
+function DocumentView({ doc, libraryLocation }: { doc: DocumentDetail; libraryLocation: string }) {
   const navigate = useNavigate()
   const folders = useFolders()
   const types = useTypes()
@@ -99,7 +136,7 @@ function DocumentView({ doc }: { doc: DocumentDetail }) {
   return (
     <Box className="ax-detail">
       <Group justify="space-between" mb="md" wrap="nowrap">
-        <Anchor component={Link} to="/library" size="sm" className="ax-back">
+        <Anchor component={Link} to={libraryLocation} size="sm" className="ax-back">
           <Group gap={6} wrap="nowrap">
             <IconArrowLeft size={16} stroke={1.6} />
             Library
@@ -288,7 +325,7 @@ function DocumentView({ doc }: { doc: DocumentDetail }) {
         onClose={() => setConfirmDelete(false)}
         onDone={() => {
           setConfirmDelete(false)
-          navigate(inTrash || trash === undefined ? '/library' : `/library?folder=${trash.id}`)
+          navigate(inTrash || trash === undefined ? libraryLocation : `/library?folder=${trash.id}`)
         }}
       />
     </Box>

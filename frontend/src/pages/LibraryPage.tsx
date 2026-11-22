@@ -3,14 +3,15 @@ import { Badge, Box, Button, Collapse, Group, Pagination, Paper, SegmentedContro
 import { useDebouncedValue, useLocalStorage, useMediaQuery } from '@mantine/hooks'
 import { IconAdjustmentsHorizontal, IconChevronDown, IconChevronUp, IconFolder, IconLayoutGrid, IconList, IconSearch } from '@tabler/icons-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { useDocuments, useFolders, useTags, useTypes } from '../api/queries'
+import { useDocuments, useFolders, useTypes } from '../api/queries'
 import type { Document } from '../api/types'
 import { useAuth } from '../auth/context'
 import { DateField } from '../components/DateField'
 import { EmptyTrashDialog } from '../components/EmptyTrashDialog'
-import { FolderTree } from '../components/FolderTree'
+import { LibraryBrowser } from '../components/LibraryBrowser'
 import { Snippet } from '../components/Snippet'
 import { accession, formatDate, folderLabel, folderTitle, isTrash, OCR_LABEL } from '../lib/format'
+import { rememberLibraryLocation } from '../lib/libraryLocation'
 
 const PAGE_SIZE = 50
 
@@ -103,7 +104,12 @@ export function LibraryPage() {
   })
   const folders = useFolders()
   const types = useTypes()
-  const tags = useTags()
+
+  // Remember where the user is, so coming back from a document (or another section) lands here again.
+  const search = params.toString()
+  useEffect(() => {
+    rememberLibraryLocation(search ? `?${search}` : '')
+  }, [search])
 
   const currentFolder = folders.data?.find((f) => f.id === folder)
   // Emptying Trash is permanent, so only admins are offered it.
@@ -133,33 +139,15 @@ export function LibraryPage() {
         )}
         <Collapse expanded={!isMobile || browseOpen}>
           <Box className="ax-library-side-body">
-            <FolderTree selected={folder} onSelect={(id) => {
+            <LibraryBrowser
+              folder={folder}
+              tag={tag}
+              onFolder={(id) => {
                 update({ folder: id ? String(id) : undefined, page: undefined })
                 setBrowseOpen(false)
-              }} />
-
-            <Stack gap={6} mt="lg">
-              <Text className="ax-mono ax-accent" size="xs" tt="uppercase">
-                Tags
-              </Text>
-              <Group gap={4}>
-                {(tags.data ?? []).map((t) => (
-                  <UnstyledButton
-                    key={t.id}
-                    className={`ax-chip${tag === t.name ? ' active' : ''}`}
-                    onClick={() => update({ tag: tag === t.name ? undefined : t.name })}
-                    aria-pressed={tag === t.name}
-                  >
-                    {t.name} <span className="ax-mono">{t.document_count}</span>
-                  </UnstyledButton>
-                ))}
-                {(tags.data ?? []).length === 0 && (
-                  <Text size="xs" c="dimmed">
-                    Tags you add to documents appear here.
-                  </Text>
-                )}
-              </Group>
-            </Stack>
+              }}
+              onTag={(t) => update({ tag: t })}
+            />
           </Box>
         </Collapse>
       </Box>

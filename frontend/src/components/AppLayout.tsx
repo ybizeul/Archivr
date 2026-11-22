@@ -8,6 +8,7 @@ import { useAuth } from '../auth/context'
 import { useDocuments, useInboxCount } from '../api/queries'
 import { DATE_LOCALES, setDateLocalePref, useDateLocalePref } from '../lib/dateLocale'
 import { browserLocale, datePattern, folderLabel, formatDate, formatDateInput } from '../lib/format'
+import { useLibraryLocation } from '../lib/libraryLocation'
 import { UploadButton } from './UploadButton'
 
 export function AppLayout() {
@@ -17,9 +18,11 @@ export function AppLayout() {
   const dateLocalePref = useDateLocalePref()
   const isMobile = useMediaQuery('(max-width: 767px)', undefined, { getInitialValueInEffect: false }) ?? false
 
+  const libraryLocation = useLibraryLocation()
+
   const nav = [
     { to: '/inbox', label: 'Inbox', icon: <IconInbox size={22} stroke={1.6} />, active: pathname === '/inbox', count: inbox.data?.count },
-    { to: '/library', label: 'Library', icon: <IconFolders size={22} stroke={1.6} />, active: pathname.startsWith('/library') || pathname.startsWith('/documents') },
+    { to: libraryLocation, label: 'Library', icon: <IconFolders size={22} stroke={1.6} />, active: pathname.startsWith('/library') || pathname.startsWith('/documents') },
     ...(user?.role === 'admin' ? [{ to: '/admin', label: 'Admin', icon: <IconSettings size={22} stroke={1.6} />, active: pathname.startsWith('/admin') }] : []),
   ]
 

@@ -587,6 +587,29 @@ html[data-mantine-color-scheme='dark'] .mantine-Button-root[data-variant='filled
   min-width: 0;
 }
 
+/* A document opened beside the folder tree: the detail page supplies its own padding. */
+.ax-library-doc {
+  padding: 0 0 0 24px;
+}
+
+.ax-library-doc .ax-library-side {
+  padding-top: 20px;
+}
+
+.ax-library-doc .ax-detail {
+  padding-left: 0;
+}
+
+@media (max-width: 1340px) {
+  .ax-library-doc .ax-detail-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ax-library-doc .ax-detail-sheet {
+    height: 60vh;
+  }
+}
+
 .ax-tree-row {
   min-height: 30px;
   border-radius: 4px;
