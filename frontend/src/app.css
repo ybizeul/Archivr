@@ -66,6 +66,17 @@ html[data-mantine-color-scheme='dark'] .mantine-Button-root[data-variant='filled
   outline-offset: 2px;
 }
 
+/* iOS Safari zooms the whole page when a field with text under 16px gets focus, and the
+   zoom does not reset on its own. Touch screens get 16px text in every field and menu input.
+   Mouse-driven screens keep the smaller type. */
+@media (pointer: coarse) {
+  input:not([type='checkbox'], [type='radio'], [type='range']),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
 /* Motion is decorative here. Keep state changes, drop the movement. */
 @media (prefers-reduced-motion: reduce) {
   *,
