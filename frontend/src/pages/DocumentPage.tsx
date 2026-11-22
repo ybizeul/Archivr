@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { Alert, Anchor, Autocomplete, Badge, Box, Button, CopyButton, Group, Loader, ScrollArea, Select, Stack, TagsInput, Text, TextInput, Title, ActionIcon, Tooltip } from '@mantine/core'
+import { Alert, Anchor, Autocomplete, Badge, Box, Button, CopyButton, Group, Loader, ScrollArea, Select, Stack, Text, TextInput, Title, ActionIcon, Tooltip } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
 import { notifications } from '@mantine/notifications'
 import { IconArrowLeft, IconChevronLeft, IconChevronRight, IconCopy, IconCheck, IconShare } from '@tabler/icons-react'
@@ -12,6 +12,7 @@ import { DocViewer } from '../components/DocViewer'
 import { LibraryBrowser } from '../components/LibraryBrowser'
 import { ShareDialog } from '../components/ShareDialog'
 import { SheetBar } from '../components/SheetBar'
+import { TagsField } from '../components/TagsField'
 import { errorMessage, folderTitle, formatBytes, formatDate, formatDateTime, isTrash, OCR_LABEL, todayISO } from '../lib/format'
 import { useLibraryLocation } from '../lib/libraryLocation'
 
@@ -271,7 +272,7 @@ function DocumentView({ doc, libraryLocation }: { doc: DocumentDetail; libraryLo
                 maxLength={200}
                 placeholder="Pick one, or type a new name"
               />
-              <TagsInput
+              <TagsField
                 label="Tags"
                 data={(tags.data ?? []).map((t) => t.name)}
                 value={tagList}

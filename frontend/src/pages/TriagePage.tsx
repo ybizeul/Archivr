@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ActionIcon, Autocomplete, Box, Button, Checkbox, Chip, Group, Loader, Modal, ScrollArea, Select, Stack, TagsInput, Text, TextInput, Title, Tooltip, UnstyledButton } from '@mantine/core'
+import { ActionIcon, Autocomplete, Box, Button, Checkbox, Chip, Group, Loader, Modal, ScrollArea, Select, Stack, Text, TextInput, Title, Tooltip, UnstyledButton } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
 import { notifications } from '@mantine/notifications'
 import { IconChevronDown, IconChevronLeft, IconChevronRight, IconChevronUp } from '@tabler/icons-react'
@@ -18,6 +18,7 @@ import { DateField } from '../components/DateField'
 import { DocViewer } from '../components/DocViewer'
 import { SheetBar } from '../components/SheetBar'
 import { Stamp } from '../components/Stamp'
+import { TagsField } from '../components/TagsField'
 import { UploadButton } from '../components/UploadButton'
 import { INBOX_ID } from '../lib/constants'
 import { NewFolder } from '../components/NewFolder'
@@ -917,7 +918,7 @@ function FilingCard({
         placeholder="Pick one, or type a new name"
       />
 
-      <TagsInput
+      <TagsField
         label="Tags"
         data={tagData}
         value={tags}
