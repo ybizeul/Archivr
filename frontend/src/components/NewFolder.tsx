@@ -22,8 +22,11 @@ export function NewFolder({
   defaultName = '',
   compact = false,
   disabled = false,
+  selectedFolder = null,
 }: {
   onCreated: (folder: Folder) => void
+  /** Id of the folder currently selected in the picker beside the button, used as the default "Inside". */
+  selectedFolder?: string | null
   defaultName?: string
   compact?: boolean
   disabled?: boolean
@@ -44,8 +47,11 @@ export function NewFolder({
 
   const open = () => {
     setName(defaultName)
-    // Offer the parent used last, unless that folder has since been deleted.
-    setParent(lastParent !== null && folders.some((f) => String(f.id) === lastParent) ? lastParent : null)
+    // Prefer the folder currently selected beside the button, then the parent used last.
+    // Either is skipped if it is gone or cannot hold folders (system folders).
+    const usable = (id: string | null | undefined): id is string =>
+      !!id && folders.some((f) => String(f.id) === id && !f.is_system)
+    setParent(usable(selectedFolder) ? selectedFolder : usable(lastParent) ? lastParent : null)
     create.reset()
     setOpened(true)
   }

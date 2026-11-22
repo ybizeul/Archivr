@@ -737,7 +737,7 @@ function FilingCard({
             nothingFoundMessage="No folder yet. Use the New folder button."
             style={{ flex: 1 }}
           />
-          <NewFolder compact disabled={disabled} onCreated={(f) => setFolderId(String(f.id))} />
+          <NewFolder compact disabled={disabled} selectedFolder={folderId} onCreated={(f) => setFolderId(String(f.id))} />
         </Group>
         {folderError && (
           <Text size="xs" c="red" mt={4}>
