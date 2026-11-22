@@ -574,7 +574,17 @@ html[data-mantine-color-scheme='dark'] .mantine-Button-root[data-variant='filled
 .ax-library-side {
   width: 240px;
   flex-shrink: 0;
+  align-self: flex-start;
+  position: sticky;
+  /* Stay under the fixed header, inside the library's 20px padding. */
+  top: calc(var(--app-shell-header-offset, 56px) + 20px);
+  max-height: calc(100dvh - var(--app-shell-header-offset, 56px) - 40px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding-right: 20px;
+  box-sizing: border-box;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ax-rule) transparent;
 }
 
 .ax-library-main {
@@ -593,7 +603,11 @@ html[data-mantine-color-scheme='dark'] .mantine-Button-root[data-variant='filled
 }
 
 .ax-library-doc .ax-library-side {
-  padding-top: 20px;
+  top: var(--app-shell-header-offset, 56px);
+  max-height: calc(100dvh - var(--app-shell-header-offset, 56px));
+  /* Border stays put while the tree scrolls; padding would scroll away. */
+  padding-top: 0;
+  border-top: 20px solid transparent;
 }
 
 .ax-library-doc .ax-detail {
@@ -879,6 +893,12 @@ html[data-mantine-color-scheme='dark'] .mantine-Button-root[data-variant='filled
     width: 100%;
     padding-right: 0;
     margin-bottom: 12px;
+    position: static;
+    top: auto;
+    max-height: none;
+    overflow: visible;
+    overscroll-behavior: auto;
+    border-top: 0;
   }
 
   .ax-library-side-body {
