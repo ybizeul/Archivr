@@ -90,10 +90,12 @@ The web app shows a link at `/share/{token}`.
 
 | Method and path | Body | Notes |
 | --- | --- | --- |
-| `GET /folders` | | `{ "items" }`, with `id`, `parent_id`, `name`, `path`, `is_system`, counts of documents and subfolders, `private` (the folder is private to you) and `private_inherited` (a folder above it is). Folders private to someone else are not listed. |
+| `GET /folders` | | `{ "items" }`, with `id`, `parent_id`, `name`, `path`, `is_system`, counts of documents and subfolders, `private` (the folder is private to you), `private_inherited` (a folder above it is) and `favorite` (you marked it). Folders private to someone else are not listed. |
 | `POST /folders` | `{ "name", "parent_id" }` | `201`. `parent_id` `null` or `0` puts the folder at the top level. A folder made inside a private folder is private too. `400` when the parent is not visible to you. |
 | `PATCH /folders/{id}` | `{ "name", "parent_id", "private" }` | Renames or moves the folder, its directory, and everything under it. `private` `true` makes it visible to you only, `false` shares it again. A folder that is moved out of a private folder stays private until you share it. `400` for INBOX and Trash, and when the folder holds a private folder of another user. `404` for a folder you cannot see. |
 | `DELETE /folders/{id}` | | `204`. `409 IN_USE` while it holds documents or subfolders. `400` for INBOX and Trash. `404` for a folder you cannot see. |
+| `PUT /folders/{id}/favorite` | | Adds the folder to the signed-in user's favorite folders. Each user has their own list. `204`, also when it is already one. `404` for a folder you cannot see. |
+| `DELETE /folders/{id}/favorite` | | Removes it from the signed-in user's favorite folders. `204`, also when it was not one. |
 
 ## Types and tags
 

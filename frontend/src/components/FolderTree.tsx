@@ -55,7 +55,25 @@ export function FolderTree({ selected, onSelect, favoritesSelected = false, onSe
   const [renaming, setRenaming] = useState<Folder | null>(null)
   const [moving, setMoving] = useState<Folder | null>(null)
   const [deleting, setDeleting] = useState<Folder | null>(null)
-  const { update: updateFolder } = useFolderMutations()
+  const { update: updateFolder, setFavorite: setFolderFavorite } = useFolderMutations()
+  // Folders the user pinned, listed under Favorites in path order so subfolders sit under their parent.
+  const pinned = useMemo(
+    () =>
+      (folders.data ?? [])
+        .filter((f) => f.favorite && !f.is_system)
+        .sort((a, b) => a.path.localeCompare(b.path, undefined, { sensitivity: 'base' })),
+    [folders.data],
+  )
+
+  const setFavoriteFolder = (f: Folder, favorite: boolean) => {
+    setFolderFavorite.mutate(
+      { id: f.id, favorite },
+      {
+        onError: (err) =>
+          notifications.show({ color: 'red', title: "Couldn't update favorites", message: errorMessage(err) }),
+      },
+    )
+  }
 
   const setPrivate = (f: Folder) => {
     const next = !f.private
@@ -84,13 +102,7 @@ export function FolderTree({ selected, onSelect, favoritesSelected = false, onSe
             onClick={() => onSelect(f.id)}
             aria-current={active ? 'true' : undefined}
           >
-            {f.private || f.private_inherited ? (
-              <IconFolderLock size={16} stroke={1.8} className="ax-private-icon" aria-label="Private folder" />
-            ) : active ? (
-              <IconFolderOpen size={16} stroke={1.6} />
-            ) : (
-              <IconFolder size={16} stroke={1.6} />
-            )}
+            <FolderIcon folder={f} active={active} />
             <Text component="span" size="sm" truncate className="ax-tree-name">
               {folderName(f)}
             </Text>
@@ -115,6 +127,14 @@ export function FolderTree({ selected, onSelect, favoritesSelected = false, onSe
                 </Menu.Item>
                 <Menu.Item leftSection={<MenuMark />} onClick={() => setMoving(f)}>
                   Move
+                </Menu.Item>
+                <Menu.Item
+                  role="menuitemcheckbox"
+                  aria-checked={f.favorite}
+                  leftSection={<MenuMark checked={f.favorite} />}
+                  onClick={() => setFavoriteFolder(f, !f.favorite)}
+                >
+                  Favorite
                 </Menu.Item>
                 <Menu.Item
                   role="menuitemcheckbox"
@@ -172,6 +192,27 @@ export function FolderTree({ selected, onSelect, favoritesSelected = false, onSe
         </UnstyledButton>
       </Box>
 
+      {pinned.map((f) => {
+        const active = selected === f.id && !favoritesSelected
+        return (
+          <Group key={f.id} gap={2} wrap="nowrap" className={`ax-tree-row${active ? ' active' : ''}`}>
+            <UnstyledButton
+              className="ax-tree-link"
+              onClick={() => onSelect(f.id)}
+              aria-current={active ? 'true' : undefined}
+            >
+              <FolderIcon folder={f} active={active} />
+              <Text component="span" size="sm" truncate className="ax-tree-name">
+                {folderLabel(f.path)}
+              </Text>
+              <Text component="span" size="xs" c="dimmed" className="ax-mono">
+                {f.document_count}
+              </Text>
+            </UnstyledButton>
+          </Group>
+        )
+      })}
+
       <UnstyledButton
         className={`ax-tree-link ax-tree-all${allSelected ? ' active' : ''}`}
         onClick={() => onSelect(undefined)}
@@ -220,6 +261,15 @@ export function FolderTree({ selected, onSelect, favoritesSelected = false, onSe
       <FolderDelete folder={deleting} onClose={() => setDeleting(null)} onDeleted={() => onSelect(undefined)} />
     </Stack>
   )
+}
+
+/** The icon for a folder row: a lock when private, an open folder when selected, otherwise a closed folder. */
+function FolderIcon({ folder, active }: { folder: Folder; active: boolean }) {
+  if (folder.private || folder.private_inherited) {
+    return <IconFolderLock size={16} stroke={1.8} className="ax-private-icon" aria-label="Private folder" />
+  }
+  if (active) return <IconFolderOpen size={16} stroke={1.6} />
+  return <IconFolder size={16} stroke={1.6} />
 }
 
 /** The left slot of a folder menu item: a check mark when `checked`, otherwise blank space of the same width. */

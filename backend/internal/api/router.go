@@ -127,6 +127,8 @@ func NewRouter(d Deps) http.Handler {
 	mux.HandleFunc("POST /api/v1/folders", s.authed(false, s.createFolder))
 	mux.HandleFunc("PATCH /api/v1/folders/{id}", s.authed(false, s.patchFolder))
 	mux.HandleFunc("DELETE /api/v1/folders/{id}", s.authed(false, s.deleteFolder))
+	mux.HandleFunc("PUT /api/v1/folders/{id}/favorite", s.authed(false, s.addFolderFavorite))
+	mux.HandleFunc("DELETE /api/v1/folders/{id}/favorite", s.authed(false, s.removeFolderFavorite))
 	mux.HandleFunc("GET /api/v1/types", s.authed(false, s.listTypes))
 	mux.HandleFunc("POST /api/v1/types", s.authed(true, s.createType))
 	mux.HandleFunc("PATCH /api/v1/types/{id}", s.authed(true, s.patchType))

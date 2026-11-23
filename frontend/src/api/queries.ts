@@ -336,7 +336,13 @@ export function useFolderMutations() {
     mutationFn: (id: number) => api.del<void>(`/folders/${id}`),
     onSuccess: () => invalidate(),
   })
-  return { create, update, remove }
+  /** Pins a folder to the signed-in user's favorites, or unpins it. */
+  const setFavorite = useMutation({
+    mutationFn: ({ id, favorite }: { id: number; favorite: boolean }) =>
+      favorite ? api.put<void>(`/folders/${id}/favorite`) : api.del<void>(`/folders/${id}/favorite`),
+    onSuccess: () => invalidate(),
+  })
+  return { create, update, remove, setFavorite }
 }
 
 export function useTypeMutations() {

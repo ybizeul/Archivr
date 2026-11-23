@@ -85,6 +85,8 @@ export interface Folder {
   private: boolean
   /** A folder above this one is private, which hides this one too. */
   private_inherited: boolean
+  /** The signed-in user pinned this folder to their favorites. Each user has their own list. */
+  favorite: boolean
 }
 
 export interface DocType {

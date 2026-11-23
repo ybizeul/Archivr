@@ -25,6 +25,8 @@ type Folder struct {
 	PrivateInherited bool `json:"private_inherited"`
 	// PrivateOwnerID is the user the folder is private to. Server side only.
 	PrivateOwnerID *int64 `json:"-"`
+	// Favorite is set when the viewer marked the folder as a favorite. Each user has their own list.
+	Favorite bool `json:"favorite"`
 }
 
 // folderQuery is the folder select for a viewer. The counts leave out what the viewer cannot
@@ -39,19 +41,22 @@ func folderQuery(viewer int64) (string, []any) {
 		kids = `(SELECT COUNT(*) FROM folders c WHERE c.parent_id = f.id AND ` + folderVisibleSQL("c") + `)`
 		args = []any{viewer, viewer}
 	}
+	// The favorite placeholder comes last in the select, so its argument is last too. It is
+	// bound even for the system viewer (0), which never matches a user's row.
 	return `
 	SELECT f.id, f.parent_id, f.name, f.path, f.is_system, ` + docs + `, ` + kids + `, f.private_owner_id,
 	       EXISTS (SELECT 1 FROM folders pf
 	                WHERE pf.private_owner_id IS NOT NULL AND pf.id <> f.id
-	                  AND substr(f.path, 1, length(pf.path) + 1) = pf.path || '/')
-	FROM folders f`, args
+	                  AND substr(f.path, 1, length(pf.path) + 1) = pf.path || '/'),
+	       EXISTS (SELECT 1 FROM folder_favorites ff WHERE ff.folder_id = f.id AND ff.user_id = ?)
+	FROM folders f`, append(args, viewer)
 }
 
 func scanFolder(row interface{ Scan(...any) error }) (Folder, error) {
 	var f Folder
 	var parent, owner sql.NullInt64
-	var system, inherited int
-	err := row.Scan(&f.ID, &parent, &f.Name, &f.Path, &system, &f.Documents, &f.Children, &owner, &inherited)
+	var system, inherited, favorite int
+	err := row.Scan(&f.ID, &parent, &f.Name, &f.Path, &system, &f.Documents, &f.Children, &owner, &inherited, &favorite)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Folder{}, ErrNotFound
 	}
@@ -69,6 +74,7 @@ func scanFolder(row interface{ Scan(...any) error }) (Folder, error) {
 	}
 	f.PrivateInherited = inherited == 1
 	f.IsSystem = system == 1
+	f.Favorite = favorite == 1
 	return f, nil
 }
 
@@ -101,8 +107,10 @@ func (s *Store) ListFoldersFor(ctx context.Context, viewer int64) ([]Folder, err
 }
 
 func (s *Store) FolderByID(ctx context.Context, id int64) (Folder, error) {
-	query, _ := folderQuery(0)
-	return scanFolder(s.q.QueryRowContext(ctx, query+` WHERE f.id = ?`, id))
+	query, args := folderQuery(0)
+	query += ` WHERE f.id = ?`
+	args = append(args, id)
+	return scanFolder(s.q.QueryRowContext(ctx, query, args...))
 }
 
 // FolderByIDFor loads a folder for a viewer, with counts that leave out what the viewer
@@ -119,8 +127,10 @@ func (s *Store) FolderByIDFor(ctx context.Context, viewer, id int64) (Folder, er
 }
 
 func (s *Store) FolderByPath(ctx context.Context, path string) (Folder, error) {
-	query, _ := folderQuery(0)
-	return scanFolder(s.q.QueryRowContext(ctx, query+` WHERE f.path = ? COLLATE NOCASE`, path))
+	query, args := folderQuery(0)
+	query += ` WHERE f.path = ? COLLATE NOCASE`
+	args = append(args, path)
+	return scanFolder(s.q.QueryRowContext(ctx, query, args...))
 }
 
 // InsertFolder adds a folder row, private to owner unless owner is 0. The caller has already

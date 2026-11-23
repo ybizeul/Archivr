@@ -74,6 +74,28 @@ func (s *server) deleteFolder(w http.ResponseWriter, r *http.Request, _ store.Us
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// addFolderFavorite and removeFolderFavorite change the signed-in user's own list of folders.
+// Both are idempotent.
+func (s *server) addFolderFavorite(w http.ResponseWriter, r *http.Request, user store.User) {
+	s.setFolderFavorite(w, r, user, true)
+}
+
+func (s *server) removeFolderFavorite(w http.ResponseWriter, r *http.Request, user store.User) {
+	s.setFolderFavorite(w, r, user, false)
+}
+
+func (s *server) setFolderFavorite(w http.ResponseWriter, r *http.Request, user store.User, favorite bool) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	if err := s.Store.SetFolderFavorite(r.Context(), user.ID, id, favorite); err != nil {
+		s.writeStoreError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 type typeBody struct {
 	Name  string `json:"name"`
 	Color string `json:"color"`

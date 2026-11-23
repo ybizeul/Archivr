@@ -61,6 +61,10 @@ Tags are unique and case-insensitive. Links are cascade-deleted with the documen
 
 One row per user and document that the user marked as favorite, so every user has their own list. Rows are cascade-deleted with the user or the document.
 
+### `folder_favorites`
+
+One row per user and folder that the user pinned to their favorites, so every user has their own list. Rows are cascade-deleted with the user or the folder. Only folders the user can see are listed, so a private folder pinned by its owner stays hidden from everyone else.
+
 ### `document_content`
 
 One row per document, written by the OCR worker.
