@@ -3,9 +3,11 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
+	"github.com/archivr/backend/internal/archive"
 	"github.com/archivr/backend/internal/paperless"
 	"github.com/archivr/backend/internal/store"
 )
@@ -88,10 +90,13 @@ func (s *server) getPaperlessImport(w http.ResponseWriter, _ *http.Request, _ st
 	writeJSON(w, http.StatusOK, s.Paperless.Status())
 }
 
-func (s *server) startPaperlessImport(w http.ResponseWriter, r *http.Request, _ store.User) {
+func (s *server) startPaperlessImport(w http.ResponseWriter, r *http.Request, user store.User) {
 	var opts paperless.Options
 	if err := readJSON(w, r, &opts); err != nil && !errors.Is(err, errEmptyBody) {
 		writeBodyError(w, err)
+		return
+	}
+	if opts.FolderID != 0 && !s.folderUsable(w, r, user, opts.FolderID) {
 		return
 	}
 	switch err := s.Paperless.Start(opts); {
@@ -121,7 +126,7 @@ func (s *server) getPaperlessMapping(w http.ResponseWriter, r *http.Request, _ s
 }
 
 // putPaperlessMapping replaces the tag-to-folder rules. The order of the rules is their priority.
-func (s *server) putPaperlessMapping(w http.ResponseWriter, r *http.Request, _ store.User) {
+func (s *server) putPaperlessMapping(w http.ResponseWriter, r *http.Request, user store.User) {
 	var body paperless.Mapping
 	if !decodeBody(w, r, &body) {
 		return
@@ -130,6 +135,18 @@ func (s *server) putPaperlessMapping(w http.ResponseWriter, r *http.Request, _ s
 	if err := m.Validate(); err != nil {
 		writeError(w, http.StatusBadRequest, "INVALID_MAPPING", err.Error())
 		return
+	}
+	// A folder hidden from this admin is reported like one that is gone.
+	for _, rule := range m.Rules {
+		ok, err := s.Store.FolderVisibleTo(r.Context(), user.ID, rule.FolderID)
+		if err != nil {
+			s.writeStoreError(w, err)
+			return
+		}
+		if !ok {
+			s.writeStoreError(w, fmt.Errorf("%w: the folder for tag %q no longer exists", archive.ErrInvalid, rule.Tag))
+			return
+		}
 	}
 	if err := m.CheckFolders(r.Context(), s.Store); err != nil {
 		s.writeStoreError(w, err)
@@ -161,4 +178,19 @@ func (s *server) listPaperlessTags(w http.ResponseWriter, r *http.Request, _ sto
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": tags})
+}
+
+// folderUsable checks that the user can see a folder before an import files into it. It writes
+// the error answer and returns false when the folder is missing or hidden.
+func (s *server) folderUsable(w http.ResponseWriter, r *http.Request, user store.User, id int64) bool {
+	ok, err := s.Store.FolderVisibleTo(r.Context(), user.ID, id)
+	if err != nil {
+		s.writeStoreError(w, err)
+		return false
+	}
+	if !ok {
+		writeError(w, http.StatusBadRequest, "INVALID", "unknown folder")
+		return false
+	}
+	return true
 }

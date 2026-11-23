@@ -328,7 +328,7 @@ export function useFolderMutations() {
     onSuccess: () => invalidate(),
   })
   const update = useMutation({
-    mutationFn: ({ id, ...body }: { id: number; name?: string; parent_id?: number }) =>
+    mutationFn: ({ id, ...body }: { id: number; name?: string; parent_id?: number; private?: boolean }) =>
       api.patch<Folder>(`/folders/${id}`, body),
     onSuccess: () => invalidate(),
   })

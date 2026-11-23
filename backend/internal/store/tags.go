@@ -17,13 +17,27 @@ type Tag struct {
 
 // ListTags returns tags whose name contains q, most used first.
 func (s *Store) ListTags(ctx context.Context, q string) ([]Tag, error) {
+	return s.ListTagsFor(ctx, 0, q)
+}
+
+// ListTagsFor lists the tags a viewer can see. The counts leave out documents hidden from the
+// viewer, and a tag that only hidden documents carry is not listed at all, so its name is not
+// revealed. A tag no document carries is listed.
+func (s *Store) ListTagsFor(ctx context.Context, viewer int64, q string) ([]Tag, error) {
+	vis, args := docVisible(viewer)
 	rows, err := s.q.QueryContext(ctx, `
-		SELECT t.id, t.name, COUNT(dt.document_id)
-		  FROM tags t LEFT JOIN document_tags dt ON dt.tag_id = t.id
+		SELECT t.id, t.name, COUNT(vd.id)
+		  FROM tags t
+		  LEFT JOIN (SELECT dt.tag_id AS tag_id, d.id AS id
+		               FROM document_tags dt
+		               JOIN documents d ON d.id = dt.document_id
+		               JOIN folders f ON f.id = d.folder_id
+		              WHERE `+vis+`) vd ON vd.tag_id = t.id
 		 WHERE instr(unaccent(t.name), unaccent(?)) > 0 OR ? = ''
 		 GROUP BY t.id
-		 ORDER BY COUNT(dt.document_id) DESC, t.name COLLATE NOCASE
-		 LIMIT 200`, q, q)
+		HAVING COUNT(vd.id) > 0 OR NOT EXISTS (SELECT 1 FROM document_tags x WHERE x.tag_id = t.id)
+		 ORDER BY COUNT(vd.id) DESC, t.name COLLATE NOCASE
+		 LIMIT 200`, append(args, q, q)...)
 	if err != nil {
 		return nil, fmt.Errorf("list tags: %w", err)
 	}
@@ -37,6 +51,27 @@ func (s *Store) ListTags(ctx context.Context, q string) ([]Tag, error) {
 		out = append(out, t)
 	}
 	return out, rows.Err()
+}
+
+// TagByIDFor loads a tag for a viewer, with a count that leaves out hidden documents. A tag
+// that only hidden documents carry is ErrNotFound.
+func (s *Store) TagByIDFor(ctx context.Context, viewer, id int64) (Tag, error) {
+	vis, args := docVisible(viewer)
+	var t Tag
+	err := s.q.QueryRowContext(ctx, `
+		SELECT t.id, t.name,
+		       (SELECT COUNT(*) FROM document_tags dt JOIN documents d ON d.id = dt.document_id
+		          JOIN folders f ON f.id = d.folder_id WHERE dt.tag_id = t.id AND `+vis+`)
+		  FROM tags t
+		 WHERE t.id = ?
+		   AND ((SELECT COUNT(*) FROM document_tags dt JOIN documents d ON d.id = dt.document_id
+		          JOIN folders f ON f.id = d.folder_id WHERE dt.tag_id = t.id AND `+vis+`) > 0
+		        OR NOT EXISTS (SELECT 1 FROM document_tags x WHERE x.tag_id = t.id))`,
+		append(append(append([]any{}, args...), id), args...)...).Scan(&t.ID, &t.Name, &t.Documents)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Tag{}, ErrNotFound
+	}
+	return t, err
 }
 
 func (s *Store) TagByID(ctx context.Context, id int64) (Tag, error) {

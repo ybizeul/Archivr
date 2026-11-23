@@ -89,6 +89,7 @@ type DocFilter struct {
 	Offset          int
 	ExcludeFolderID int64 // when set, documents in this folder are left out
 	FavoriteOf      int64 // when set, only documents this user has marked as favorite
+	ViewerID        int64 // when set, documents hidden from this user are left out; 0 is the system and sees all
 }
 
 const (
@@ -229,6 +230,11 @@ func (s *Store) ListDocuments(ctx context.Context, f DocFilter) ([]Document, int
 	if f.FavoriteOf != 0 {
 		where = append(where, `EXISTS (SELECT 1 FROM document_favorites fv WHERE fv.document_id = d.id AND fv.user_id = ?)`)
 		args = append(args, f.FavoriteOf)
+	}
+	if f.ViewerID != 0 {
+		vis, visArgs := docVisible(f.ViewerID)
+		where = append(where, vis)
+		args = append(args, visArgs...)
 	}
 	clause := ""
 	if len(where) > 0 {

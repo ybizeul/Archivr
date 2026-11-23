@@ -6,14 +6,14 @@ import (
 )
 
 // SetFavorite adds a document to a user's favourites, or removes it. Both are idempotent.
-// It returns ErrNotFound when the document does not exist.
+// It returns ErrNotFound when the document does not exist or is hidden from the user.
 func (s *Store) SetFavorite(ctx context.Context, userID, docID int64, favorite bool) error {
 	if favorite {
-		var exists int
-		if err := s.q.QueryRowContext(ctx, `SELECT COUNT(*) FROM documents WHERE id = ?`, docID).Scan(&exists); err != nil {
-			return fmt.Errorf("check document: %w", err)
+		ok, err := s.DocumentVisibleTo(ctx, userID, docID)
+		if err != nil {
+			return err
 		}
-		if exists == 0 {
+		if !ok {
 			return ErrNotFound
 		}
 		if _, err := s.q.ExecContext(ctx,

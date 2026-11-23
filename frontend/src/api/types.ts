@@ -81,6 +81,10 @@ export interface Folder {
   is_system: boolean
   document_count: number
   child_count: number
+  /** The folder is private: only you see it, with everything inside it. */
+  private: boolean
+  /** A folder above this one is private, which hides this one too. */
+  private_inherited: boolean
 }
 
 export interface DocType {

@@ -10,11 +10,13 @@ import (
 	"github.com/archivr/backend/internal/store"
 )
 
-// FolderPatch changes a folder's name and/or parent. A ParentID of 0 moves the
-// folder to the top level.
+// FolderPatch changes a folder's name, parent and/or privacy. A ParentID of 0 moves the
+// folder to the top level. Private makes the folder visible to the acting user only, or
+// shares it again.
 type FolderPatch struct {
 	Name     *string `json:"name"`
 	ParentID *int64  `json:"parent_id"`
+	Private  *bool   `json:"private"`
 }
 
 // CreateFolder adds a folder under parentID (nil for the top level) and creates its directory.
@@ -27,18 +29,22 @@ func (s *Service) CreateFolder(ctx context.Context, parentID *int64, name string
 	var dir string
 	err := s.Store.InTx(ctx, func(tx *store.Store) error {
 		path := name
+		var owner int64 // a folder made inside a private folder is private to the same user
 		if parentID != nil {
 			parent, err := tx.FolderByID(ctx, *parentID)
-			if err != nil {
+			if err != nil || requireFolder(ctx, tx, *parentID) != nil {
 				return invalid("unknown parent folder")
 			}
 			path = parent.Path + "/" + name
+			if owner, err = tx.FolderOwner(ctx, parent.ID); err != nil {
+				return err
+			}
 		}
 		d, err := s.Layout.FolderDir(path)
 		if err != nil {
 			return invalid("folder name %q is not allowed", name)
 		}
-		if out, err = tx.InsertFolder(ctx, parentID, name, path); err != nil {
+		if out, err = tx.InsertFolder(ctx, parentID, name, path, owner); err != nil {
 			return err
 		}
 		dir = d
@@ -53,8 +59,11 @@ func (s *Service) CreateFolder(ctx context.Context, parentID *int64, name string
 	return out, nil
 }
 
-// UpdateFolder renames or moves a folder, its directory, and every folder under it.
-// system folders (INBOX, Trash) cannot be changed.
+// UpdateFolder renames or moves a folder, its directory, and every folder under it, and
+// changes whether it is private. System folders (INBOX, Trash) cannot be changed.
+//
+// A folder never becomes visible to others by being moved: one that leaves a private folder
+// stays private to the same user, until they share it on purpose.
 func (s *Service) UpdateFolder(ctx context.Context, id int64, p FolderPatch) (store.Folder, error) {
 	var out store.Folder
 	var undo func()
@@ -63,8 +72,15 @@ func (s *Service) UpdateFolder(ctx context.Context, id int64, p FolderPatch) (st
 		if err != nil {
 			return err
 		}
+		if err := requireFolder(ctx, tx, id); err != nil {
+			return err
+		}
 		if cur.IsSystem {
 			return invalid("system folders (INBOX, Trash) cannot be changed")
+		}
+		actor := actorOf(ctx)
+		if p.Private != nil && actor == 0 {
+			return invalid("only a signed-in user can make a folder private")
 		}
 		name := cur.Name
 		if p.Name != nil {
@@ -83,19 +99,62 @@ func (s *Service) UpdateFolder(ctx context.Context, id int64, p FolderPatch) (st
 			}
 		}
 		newPath := name
+		var newParentOwner int64
 		if parentID != nil {
 			parent, err := tx.FolderByID(ctx, *parentID)
-			if err != nil {
+			if err != nil || requireFolder(ctx, tx, *parentID) != nil {
 				return invalid("unknown parent folder")
 			}
 			if parent.ID == cur.ID || strings.HasPrefix(parent.Path+"/", cur.Path+"/") {
 				return invalid("a folder cannot be moved into itself")
 			}
 			newPath = parent.Path + "/" + name
+			if newParentOwner, err = tx.FolderOwner(ctx, parent.ID); err != nil {
+				return err
+			}
 		}
-		if newPath == cur.Path {
-			out = cur
-			return nil
+
+		// Work out who the folder is private to afterwards.
+		oldOwner, err := tx.FolderOwner(ctx, cur.ID) // through the folder itself or a folder above
+		if err != nil {
+			return err
+		}
+		var own int64 // the folder's own flag
+		if cur.PrivateOwnerID != nil {
+			own = *cur.PrivateOwnerID
+		}
+		moving := newPath != cur.Path
+		if p.Private != nil {
+			own = 0
+			if *p.Private {
+				own = actor
+			}
+		} else if moving && own == 0 && oldOwner != 0 && newParentOwner != oldOwner {
+			own = oldOwner // leaving a private folder: stay private
+		}
+		// The folder will be hidden from everyone but the user who owns it or the folder above it.
+		hiddenFrom := own
+		if hiddenFrom == 0 {
+			hiddenFrom = newParentOwner
+		}
+		if hiddenFrom != 0 && (p.Private != nil || moving) {
+			others, err := tx.SubtreeHasPrivateOfOthers(ctx, cur.Path, hiddenFrom)
+			if err != nil {
+				return err
+			}
+			if others {
+				return invalid("this folder holds a private folder of another user, so it cannot be made private or moved into one")
+			}
+		}
+		if own != 0 || cur.PrivateOwnerID != nil {
+			if err := tx.SetFolderOwner(ctx, id, own); err != nil {
+				return err
+			}
+		}
+
+		if !moving {
+			out, err = tx.FolderByID(ctx, id)
+			return err
 		}
 		oldDir, err := s.Layout.FolderDir(cur.Path)
 		if err != nil {
@@ -134,6 +193,9 @@ func (s *Service) DeleteFolder(ctx context.Context, id int64) error {
 	return s.Store.InTx(ctx, func(tx *store.Store) error {
 		cur, err := tx.FolderByID(ctx, id)
 		if err != nil {
+			return err
+		}
+		if err := requireFolder(ctx, tx, id); err != nil {
 			return err
 		}
 		if cur.IsSystem {
@@ -209,7 +271,7 @@ func (s *Service) DeleteType(ctx context.Context, id int64) error {
 			return err
 		}
 		if t.Documents > 0 {
-			return fmt.Errorf("%w: %d documents still use this type", store.ErrInUse, t.Documents)
+			return fmt.Errorf("%w: documents still use this type", store.ErrInUse)
 		}
 		return tx.DeleteType(ctx, id)
 	})

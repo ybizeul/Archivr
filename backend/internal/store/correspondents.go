@@ -16,13 +16,25 @@ type Correspondent struct {
 
 // ListCorrespondents returns correspondents whose name contains q, most used first.
 func (s *Store) ListCorrespondents(ctx context.Context, q string) ([]Correspondent, error) {
+	return s.ListCorrespondentsFor(ctx, 0, q)
+}
+
+// ListCorrespondentsFor lists the correspondents a viewer can see. The counts leave out
+// documents hidden from the viewer, and a correspondent that only hidden documents name is not
+// listed, so the name is not revealed. One that no document names is listed.
+func (s *Store) ListCorrespondentsFor(ctx context.Context, viewer int64, q string) ([]Correspondent, error) {
+	vis, args := docVisible(viewer)
 	rows, err := s.q.QueryContext(ctx, `
-		SELECT c.id, c.name, COUNT(d.id)
-		  FROM correspondents c LEFT JOIN documents d ON d.correspondent_id = c.id
+		SELECT c.id, c.name, COUNT(vd.id)
+		  FROM correspondents c
+		  LEFT JOIN (SELECT d.id AS id, d.correspondent_id AS cid
+		               FROM documents d JOIN folders f ON f.id = d.folder_id
+		              WHERE `+vis+`) vd ON vd.cid = c.id
 		 WHERE instr(unaccent(c.name), unaccent(?)) > 0 OR ? = ''
 		 GROUP BY c.id
-		 ORDER BY COUNT(d.id) DESC, c.name COLLATE NOCASE
-		 LIMIT 500`, q, q)
+		HAVING COUNT(vd.id) > 0 OR NOT EXISTS (SELECT 1 FROM documents x WHERE x.correspondent_id = c.id)
+		 ORDER BY COUNT(vd.id) DESC, c.name COLLATE NOCASE
+		 LIMIT 500`, append(args, q, q)...)
 	if err != nil {
 		return nil, fmt.Errorf("list correspondents: %w", err)
 	}

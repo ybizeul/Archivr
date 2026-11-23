@@ -1,7 +1,17 @@
 import { useMemo, useState } from 'react'
 import { ActionIcon, Box, Button, Group, Menu, Modal, Select, Stack, Text, TextInput, UnstyledButton } from '@mantine/core'
 import { notifications } from '@mantine/notifications'
-import { IconBookmark, IconBookmarkFilled, IconDots, IconFolder, IconFolderOpen, IconPlus, IconTrash } from '@tabler/icons-react'
+import {
+  IconBookmark,
+  IconBookmarkFilled,
+  IconCheck,
+  IconDots,
+  IconFolder,
+  IconFolderLock,
+  IconFolderOpen,
+  IconPlus,
+  IconTrash,
+} from '@tabler/icons-react'
 import { useFavoriteCount, useFolderMutations, useFolders } from '../api/queries'
 import type { Folder } from '../api/types'
 import { errorMessage, folderLabel, folderName, isTrash } from '../lib/format'
@@ -45,6 +55,23 @@ export function FolderTree({ selected, onSelect, favoritesSelected = false, onSe
   const [renaming, setRenaming] = useState<Folder | null>(null)
   const [moving, setMoving] = useState<Folder | null>(null)
   const [deleting, setDeleting] = useState<Folder | null>(null)
+  const { update: updateFolder } = useFolderMutations()
+
+  const setPrivate = (f: Folder) => {
+    const next = !f.private
+    updateFolder.mutate(
+      { id: f.id, private: next },
+      {
+        onSuccess: () =>
+          notifications.show({
+            color: 'prussian',
+            message: next ? `${f.name} is private. Only you can see it` : `${f.name} is shared with everyone`,
+          }),
+        onError: (err) =>
+          notifications.show({ color: 'red', title: "Couldn't change the folder", message: errorMessage(err) }),
+      },
+    )
+  }
 
   const renderNode = (node: Node, depth: number) => {
     const f = node.folder
@@ -57,7 +84,13 @@ export function FolderTree({ selected, onSelect, favoritesSelected = false, onSe
             onClick={() => onSelect(f.id)}
             aria-current={active ? 'true' : undefined}
           >
-            {active ? <IconFolderOpen size={16} stroke={1.6} /> : <IconFolder size={16} stroke={1.6} />}
+            {f.private || f.private_inherited ? (
+              <IconFolderLock size={16} stroke={1.8} className="ax-private-icon" aria-label="Private folder" />
+            ) : active ? (
+              <IconFolderOpen size={16} stroke={1.6} />
+            ) : (
+              <IconFolder size={16} stroke={1.6} />
+            )}
             <Text component="span" size="sm" truncate className="ax-tree-name">
               {folderName(f)}
             </Text>
@@ -73,11 +106,28 @@ export function FolderTree({ selected, onSelect, favoritesSelected = false, onSe
                 </ActionIcon>
               </Menu.Target>
               <Menu.Dropdown>
-                <Menu.Item onClick={() => setCreating({ parent: f.id })}>New subfolder</Menu.Item>
-                <Menu.Item onClick={() => setRenaming(f)}>Rename</Menu.Item>
-                <Menu.Item onClick={() => setMoving(f)}>Move</Menu.Item>
+                {/* Every item has the same left slot, so the labels line up whether or not there is a check mark. */}
+                <Menu.Item leftSection={<MenuMark />} onClick={() => setCreating({ parent: f.id })}>
+                  New subfolder
+                </Menu.Item>
+                <Menu.Item leftSection={<MenuMark />} onClick={() => setRenaming(f)}>
+                  Rename
+                </Menu.Item>
+                <Menu.Item leftSection={<MenuMark />} onClick={() => setMoving(f)}>
+                  Move
+                </Menu.Item>
+                <Menu.Item
+                  role="menuitemcheckbox"
+                  aria-checked={f.private || f.private_inherited}
+                  leftSection={<MenuMark checked={f.private || f.private_inherited} />}
+                  // Privacy that comes from a folder above is changed there.
+                  disabled={f.private_inherited && !f.private}
+                  onClick={() => setPrivate(f)}
+                >
+                  Private
+                </Menu.Item>
                 <Menu.Divider />
-                <Menu.Item color="red" onClick={() => setDeleting(f)}>
+                <Menu.Item color="red" leftSection={<MenuMark />} onClick={() => setDeleting(f)}>
                   Delete
                 </Menu.Item>
               </Menu.Dropdown>
@@ -169,6 +219,15 @@ export function FolderTree({ selected, onSelect, favoritesSelected = false, onSe
       {moving && <FolderMove key={moving.id} folder={moving} folders={all} onClose={() => setMoving(null)} />}
       <FolderDelete folder={deleting} onClose={() => setDeleting(null)} onDeleted={() => onSelect(undefined)} />
     </Stack>
+  )
+}
+
+/** The left slot of a folder menu item: a check mark when `checked`, otherwise blank space of the same width. */
+function MenuMark({ checked = false }: { checked?: boolean }) {
+  return (
+    <span className="ax-menu-mark" aria-hidden="true">
+      {checked && <IconCheck size={14} stroke={2} />}
+    </span>
   )
 }
 

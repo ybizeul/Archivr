@@ -35,6 +35,7 @@ type fixture struct {
 	t        *testing.T
 	h        http.Handler
 	store    *store.Store
+	archive  *archive.Service
 	sessions *auth.Sessions
 	skew     time.Duration // added to the server clock, so tests can move time forward
 }
@@ -77,7 +78,7 @@ func newFixture(t *testing.T, opts ...func(*Deps)) *fixture {
 
 	importer := &ingest.Importer{Archive: arch, Store: st}
 
-	f := &fixture{t: t, store: st, sessions: sessions}
+	f := &fixture{t: t, store: st, archive: arch, sessions: sessions}
 	deps := Deps{
 		Store:     st,
 		Sessions:  sessions,

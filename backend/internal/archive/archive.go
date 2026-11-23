@@ -278,6 +278,9 @@ func (s *Service) Update(ctx context.Context, id int64, p Patch) (store.Document
 		if err != nil {
 			return err
 		}
+		if err := requireDocument(ctx, tx, id); err != nil {
+			return err
+		}
 		f := store.DocFields{
 			Title:           cur.Title,
 			DocumentDate:    cur.DocumentDate,
@@ -357,6 +360,9 @@ func (s *Service) Update(ctx context.Context, id int64, p Patch) (store.Document
 			if _, err := tx.FolderByID(ctx, *p.FolderID); err != nil {
 				return invalid("unknown folder")
 			}
+			if err := requireFolder(ctx, tx, *p.FolderID); err != nil {
+				return invalid("unknown folder")
+			}
 			f.FolderID = *p.FolderID
 		}
 		folder, err := tx.FolderByID(ctx, f.FolderID)
@@ -380,7 +386,20 @@ func (s *Service) Update(ctx context.Context, id int64, p Patch) (store.Document
 			return err
 		}
 
+		// Trash is shared. A private document that goes there keeps its owner, so it stays
+		// hidden from everyone else. Anywhere else, the folder decides who sees it.
+		owner, err := tx.DocumentOwner(ctx, id)
+		if err != nil {
+			return err
+		}
+		if !strings.EqualFold(folder.Path, TrashName) || !folder.IsSystem {
+			owner = 0
+		}
+
 		if err := tx.SaveDocumentFields(ctx, id, f); err != nil {
+			return err
+		}
+		if err := tx.SetDocumentOwner(ctx, id, owner); err != nil {
 			return err
 		}
 		if p.Tags != nil {
@@ -430,6 +449,9 @@ func (s *Service) ReplaceFile(ctx context.Context, id int64, data []byte, mime s
 	err := s.Store.InTx(ctx, func(tx *store.Store) error {
 		cur, err := tx.GetDocument(ctx, id)
 		if err != nil {
+			return err
+		}
+		if err := requireDocument(ctx, tx, id); err != nil {
 			return err
 		}
 		sha := sha256Hex(data)
@@ -509,7 +531,8 @@ func (s *Service) Delete(ctx context.Context, id int64) error {
 	return err
 }
 
-// EmptyTrash permanently deletes every document in the Trash folder.
+// EmptyTrash permanently deletes every document in the Trash folder that the actor can see:
+// a private document in Trash stays until its owner empties it.
 // A document that leaves Trash before its turn is left where it is.
 // Already-deleted documents are skipped. If one delete fails, the rest are
 // still attempted. The count is how many were removed, and the error is the
@@ -555,6 +578,9 @@ func (s *Service) deleteDocument(ctx context.Context, id, onlyFolder int64) (boo
 	err := s.Store.InTx(ctx, func(tx *store.Store) error {
 		cur, err := tx.GetDocument(ctx, id)
 		if err != nil {
+			return err
+		}
+		if err := requireDocument(ctx, tx, id); err != nil {
 			return err
 		}
 		if onlyFolder != 0 && cur.FolderID != onlyFolder {

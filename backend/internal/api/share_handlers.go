@@ -36,8 +36,9 @@ type sharedDocument struct {
 
 // createShare signs a link to one document, valid for the period the user chose.
 // The link is a signed token, so nothing is stored: it works until it expires, or until
-// the document is deleted or JWT_SECRET changes.
-func (s *server) createShare(w http.ResponseWriter, r *http.Request, _ store.User) {
+// the document is deleted or JWT_SECRET changes. Only a user who can see the document can
+// share it. A private document can be shared by its owner: handing out the link is their choice.
+func (s *server) createShare(w http.ResponseWriter, r *http.Request, user store.User) {
 	id, ok := pathID(w, r)
 	if !ok {
 		return
@@ -55,7 +56,7 @@ func (s *server) createShare(w http.ResponseWriter, r *http.Request, _ store.Use
 		writeError(w, http.StatusBadRequest, "INVALID", "the link must stay valid between 1 minute and 365 days")
 		return
 	}
-	if _, err := s.Store.GetDocument(r.Context(), id); err != nil {
+	if _, err := s.Store.GetDocumentFor(r.Context(), user.ID, id); err != nil {
 		s.writeStoreError(w, err)
 		return
 	}

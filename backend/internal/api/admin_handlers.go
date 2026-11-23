@@ -334,6 +334,16 @@ func (s *server) deleteUser(w http.ResponseWriter, r *http.Request, actor store.
 			return
 		}
 	}
+	// Deleting the account would leave its private folders with no owner. Refuse, so the
+	// private documents do not turn public.
+	if owns, err := s.Store.OwnsPrivateData(ctx, id); err != nil {
+		s.writeStoreError(w, err)
+		return
+	} else if owns {
+		writeError(w, http.StatusConflict, "IN_USE",
+			"this user still has private folders. They must share or delete them first, because nobody else can see them")
+		return
+	}
 	if err := s.Store.DeleteUser(ctx, id); err != nil {
 		s.writeStoreError(w, err)
 		return

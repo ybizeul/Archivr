@@ -218,7 +218,8 @@ func (s *server) authed(admin bool, next func(http.ResponseWriter, *http.Request
 			writeError(w, http.StatusForbidden, "FORBIDDEN", "admin role required")
 			return
 		}
-		next(w, r, user)
+		// Archive mutations act for this user: they cannot reach what a private folder hides.
+		next(w, r.WithContext(archive.WithActor(r.Context(), user.ID)), user)
 	}
 }
 

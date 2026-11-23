@@ -16,11 +16,19 @@ type DocType struct {
 }
 
 func (s *Store) ListTypes(ctx context.Context) ([]DocType, error) {
+	return s.ListTypesFor(ctx, 0)
+}
+
+// ListTypesFor lists the types with a document count that leaves out what the viewer cannot
+// see. Types are shared, so every type is listed.
+func (s *Store) ListTypesFor(ctx context.Context, viewer int64) ([]DocType, error) {
+	vis, args := docVisible(viewer)
 	rows, err := s.q.QueryContext(ctx, `
 		SELECT t.id, t.name, t.color,
-		       (SELECT COUNT(*) FROM documents d WHERE d.type_id = t.id)
+		       (SELECT COUNT(*) FROM documents d JOIN folders f ON f.id = d.folder_id
+		         WHERE d.type_id = t.id AND `+vis+`)
 		  FROM document_types t
-		 ORDER BY t.name COLLATE NOCASE`)
+		 ORDER BY t.name COLLATE NOCASE`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list types: %w", err)
 	}
@@ -37,11 +45,18 @@ func (s *Store) ListTypes(ctx context.Context) ([]DocType, error) {
 }
 
 func (s *Store) TypeByID(ctx context.Context, id int64) (DocType, error) {
+	return s.TypeByIDFor(ctx, 0, id)
+}
+
+// TypeByIDFor loads a type with a document count that leaves out what the viewer cannot see.
+func (s *Store) TypeByIDFor(ctx context.Context, viewer, id int64) (DocType, error) {
 	var t DocType
+	vis, args := docVisible(viewer)
 	err := s.q.QueryRowContext(ctx, `
 		SELECT t.id, t.name, t.color,
-		       (SELECT COUNT(*) FROM documents d WHERE d.type_id = t.id)
-		  FROM document_types t WHERE t.id = ?`, id).
+		       (SELECT COUNT(*) FROM documents d JOIN folders f ON f.id = d.folder_id
+		         WHERE d.type_id = t.id AND `+vis+`)
+		  FROM document_types t WHERE t.id = ?`, append(args, id)...).
 		Scan(&t.ID, &t.Name, &t.Color, &t.Documents)
 	if errors.Is(err, sql.ErrNoRows) {
 		return DocType{}, ErrNotFound

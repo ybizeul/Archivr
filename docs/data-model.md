@@ -16,6 +16,7 @@ Mirrors the folder tree under `DATA_DIR/documents`.
 | `parent_id` | `NULL` at the top level. `ON DELETE RESTRICT`: a folder with children cannot be removed. |
 | `name` | No `/`, not empty. |
 | `path` | Full path such as `Home/Lease`. Unique, and unique case-insensitively (`folders_path_nocase`). |
+| `private_owner_id` | `NULL` for a shared folder. Otherwise the user it is private to (`ON DELETE RESTRICT`: an account that owns private data cannot be deleted). The folder and everything beneath it are visible to that user only. The check walks the folder's own path and its ancestors, so a subfolder needs no flag of its own. A folder created inside a private folder, or moved out of one, is flagged with the same owner. |
 | `is_system` | `1` for INBOX and Trash. They cannot be renamed, moved or deleted. Trash (path `Trash`, added by migration `0007`) is where deleted documents and expired documents go. It is an ordinary folder on disk, separate from `DATA_DIR/trash`. |
 
 ### `documents`
@@ -39,6 +40,7 @@ One row per archived file.
 | `ocr_error` | Last error message from OCR, empty otherwise. |
 | `rotation` | `0`, `90`, `180` or `270`: degrees clockwise the browser turns the document for display. Display metadata only, the file on disk is never rotated. Default `0`, set by the rotate buttons. |
 | `valid_until` | `YYYY-MM-DD`, the last day the document is valid, or `NULL` when it does not expire. The day after, a sweep moves the document into the Trash folder. The date stays on the document. Taking an expired document out of Trash clears it, so it is not trashed again. |
+| `private_owner_id` | `NULL` for nearly every document: it is private through its folder. Set only when a document leaves a private folder for the shared Trash, by hand or by expiry, so it stays hidden from other users there. Moving it anywhere else clears it. `ON DELETE RESTRICT`, like the folder column. |
 | `created_at`, `updated_at` | UTC timestamps. |
 
 Indexes: folder, type, OCR status, date, created, valid until.

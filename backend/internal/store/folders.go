@@ -17,19 +17,41 @@ type Folder struct {
 	IsSystem  bool   `json:"is_system"`
 	Documents int    `json:"document_count"` // documents filed directly in this folder
 	Children  int    `json:"child_count"`    // direct subfolders
+	// Private is set when the folder itself is private. A folder a viewer can see is private
+	// to that viewer, so the owner is not exposed.
+	Private bool `json:"private"`
+	// PrivateInherited is set when a folder above this one is private, which hides this
+	// folder too.
+	PrivateInherited bool `json:"private_inherited"`
+	// PrivateOwnerID is the user the folder is private to. Server side only.
+	PrivateOwnerID *int64 `json:"-"`
 }
 
-const folderSelect = `
-	SELECT f.id, f.parent_id, f.name, f.path, f.is_system,
-	       (SELECT COUNT(*) FROM documents d WHERE d.folder_id = f.id),
-	       (SELECT COUNT(*) FROM folders c WHERE c.parent_id = f.id)
-	FROM folders f`
+// folderQuery is the folder select for a viewer. The counts leave out what the viewer cannot
+// see, so a private subfolder or document does not show up in a count. The system viewer (0)
+// gets the real counts, which the delete check relies on.
+func folderQuery(viewer int64) (string, []any) {
+	docs := `(SELECT COUNT(*) FROM documents d WHERE d.folder_id = f.id)`
+	kids := `(SELECT COUNT(*) FROM folders c WHERE c.parent_id = f.id)`
+	var args []any
+	if viewer != 0 {
+		docs = `(SELECT COUNT(*) FROM documents d WHERE d.folder_id = f.id AND (d.private_owner_id IS NULL OR d.private_owner_id = ?))`
+		kids = `(SELECT COUNT(*) FROM folders c WHERE c.parent_id = f.id AND ` + folderVisibleSQL("c") + `)`
+		args = []any{viewer, viewer}
+	}
+	return `
+	SELECT f.id, f.parent_id, f.name, f.path, f.is_system, ` + docs + `, ` + kids + `, f.private_owner_id,
+	       EXISTS (SELECT 1 FROM folders pf
+	                WHERE pf.private_owner_id IS NOT NULL AND pf.id <> f.id
+	                  AND substr(f.path, 1, length(pf.path) + 1) = pf.path || '/')
+	FROM folders f`, args
+}
 
 func scanFolder(row interface{ Scan(...any) error }) (Folder, error) {
 	var f Folder
-	var parent sql.NullInt64
-	var system int
-	err := row.Scan(&f.ID, &parent, &f.Name, &f.Path, &system, &f.Documents, &f.Children)
+	var parent, owner sql.NullInt64
+	var system, inherited int
+	err := row.Scan(&f.ID, &parent, &f.Name, &f.Path, &system, &f.Documents, &f.Children, &owner, &inherited)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Folder{}, ErrNotFound
 	}
@@ -40,13 +62,29 @@ func scanFolder(row interface{ Scan(...any) error }) (Folder, error) {
 		p := parent.Int64
 		f.ParentID = &p
 	}
+	if owner.Valid {
+		o := owner.Int64
+		f.PrivateOwnerID = &o
+		f.Private = true
+	}
+	f.PrivateInherited = inherited == 1
 	f.IsSystem = system == 1
 	return f, nil
 }
 
 // ListFolders returns every folder, sorted by path, so a client can build the tree.
 func (s *Store) ListFolders(ctx context.Context) ([]Folder, error) {
-	rows, err := s.q.QueryContext(ctx, folderSelect+` ORDER BY f.path COLLATE NOCASE`)
+	return s.ListFoldersFor(ctx, 0)
+}
+
+// ListFoldersFor returns the folders a viewer can see.
+func (s *Store) ListFoldersFor(ctx context.Context, viewer int64) ([]Folder, error) {
+	query, args := folderQuery(viewer)
+	if viewer != 0 {
+		query += ` WHERE ` + folderVisibleSQL("f")
+		args = append(args, viewer)
+	}
+	rows, err := s.q.QueryContext(ctx, query+` ORDER BY f.path COLLATE NOCASE`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list folders: %w", err)
 	}
@@ -63,18 +101,34 @@ func (s *Store) ListFolders(ctx context.Context) ([]Folder, error) {
 }
 
 func (s *Store) FolderByID(ctx context.Context, id int64) (Folder, error) {
-	return scanFolder(s.q.QueryRowContext(ctx, folderSelect+` WHERE f.id = ?`, id))
+	query, _ := folderQuery(0)
+	return scanFolder(s.q.QueryRowContext(ctx, query+` WHERE f.id = ?`, id))
+}
+
+// FolderByIDFor loads a folder for a viewer, with counts that leave out what the viewer
+// cannot see. A hidden folder is ErrNotFound, the same answer as one that does not exist.
+func (s *Store) FolderByIDFor(ctx context.Context, viewer, id int64) (Folder, error) {
+	query, args := folderQuery(viewer)
+	query += ` WHERE f.id = ?`
+	args = append(args, id)
+	if viewer != 0 {
+		query += ` AND ` + folderVisibleSQL("f")
+		args = append(args, viewer)
+	}
+	return scanFolder(s.q.QueryRowContext(ctx, query, args...))
 }
 
 func (s *Store) FolderByPath(ctx context.Context, path string) (Folder, error) {
-	return scanFolder(s.q.QueryRowContext(ctx, folderSelect+` WHERE f.path = ? COLLATE NOCASE`, path))
+	query, _ := folderQuery(0)
+	return scanFolder(s.q.QueryRowContext(ctx, query+` WHERE f.path = ? COLLATE NOCASE`, path))
 }
 
-// InsertFolder adds a folder row. The caller has already validated the name and path.
-func (s *Store) InsertFolder(ctx context.Context, parentID *int64, name, path string) (Folder, error) {
+// InsertFolder adds a folder row, private to owner unless owner is 0. The caller has already
+// validated the name and path.
+func (s *Store) InsertFolder(ctx context.Context, parentID *int64, name, path string, owner int64) (Folder, error) {
 	res, err := s.q.ExecContext(ctx,
-		`INSERT INTO folders (parent_id, name, path, is_system) VALUES (?, ?, ?, 0)`,
-		nullableID(parentID), name, path)
+		`INSERT INTO folders (parent_id, name, path, is_system, private_owner_id) VALUES (?, ?, ?, 0, ?)`,
+		nullableID(parentID), name, path, ownerArg(owner))
 	if err != nil {
 		return Folder{}, fmt.Errorf("insert folder: %w", mapErr(err))
 	}

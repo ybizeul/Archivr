@@ -8,6 +8,8 @@ All routes are under `/api/v1`, except `GET /healthz`. Bodies are JSON, sent wit
 
 **Roles.** Routes marked *admin* return `403 FORBIDDEN` to a user with the `user` role.
 
+**Private folders.** A folder can be private to the user who made it so: only that user sees it, with every subfolder and document in it. For everyone else it does not exist. Folder, document, share, favorite and tag routes answer `404 NOT_FOUND` for it, lists and search leave it out, and counts (documents in a folder, a tag, a type or a correspondent) leave out what the caller cannot see. Admins get no exception.
+
 **Cross-origin requests.** A request with any method other than `GET`, `HEAD` or `OPTIONS` returns `403 CROSS_ORIGIN` when the browser marks it as coming from another site, with `Sec-Fetch-Site` or with an `Origin` that does not match the host. Clients outside a browser send neither header and are not affected.
 
 **Errors.** Every error has one shape:
@@ -64,7 +66,7 @@ Unknown paths under `/api/` return a JSON `404 NOT_FOUND`.
 | `PUT /documents/{id}/favorite` | Adds the document to the signed-in user's favorites. Each user has their own list. `204`, also when it is already a favorite. `404` for an unknown document. |
 | `DELETE /documents/{id}/favorite` | Removes it from the signed-in user's favorites. `204`, also when it was not one. |
 | `DELETE /documents/{id}` | `204`. **Permanent.** Removes the file, its sidecar, and the row. |
-| `POST /trash/empty` | *Admin.* `200` with `{ "deleted" }`. Permanently deletes every document in the Trash folder, the same way as `DELETE /documents/{id}`. A document that leaves Trash before it is reached is left where it is. An empty Trash returns `{ "deleted": 0 }`. If one delete fails, documents already removed stay removed and the response is an error. |
+| `POST /trash/empty` | *Admin.* `200` with `{ "deleted" }`. Permanently deletes every document in the Trash folder that the caller can see (a private document moved to Trash stays hidden from others, and stays), the same way as `DELETE /documents/{id}`. A document that leaves Trash before it is reached is left where it is. An empty Trash returns `{ "deleted": 0 }`. If one delete fails, documents already removed stay removed and the response is an error. |
 | `GET /documents/{id}/file` | The stored file, inline, with its stored content type and `X-Content-Type-Options: nosniff`. |
 | `GET /documents/{id}/thumbnail` | JPEG preview, up to 480 px. |
 | `GET /documents/{id}/suggestions` | `{ "dates": [{ "value", "label", "source" }], "titles": [] }`, found in the OCR text. Nothing is saved until a user applies one. |
@@ -88,10 +90,10 @@ The web app shows a link at `/share/{token}`.
 
 | Method and path | Body | Notes |
 | --- | --- | --- |
-| `GET /folders` | | `{ "items" }`, with `id`, `parent_id`, `name`, `path`, `is_system`, and counts of documents and subfolders. |
-| `POST /folders` | `{ "name", "parent_id" }` | `201`. `parent_id` `null` or `0` puts the folder at the top level. |
-| `PATCH /folders/{id}` | `{ "name", "parent_id" }` | Renames or moves the folder, its directory, and everything under it. `400` for INBOX and Trash. |
-| `DELETE /folders/{id}` | | `204`. `409 IN_USE` while it holds documents or subfolders. `400` for INBOX and Trash. |
+| `GET /folders` | | `{ "items" }`, with `id`, `parent_id`, `name`, `path`, `is_system`, counts of documents and subfolders, `private` (the folder is private to you) and `private_inherited` (a folder above it is). Folders private to someone else are not listed. |
+| `POST /folders` | `{ "name", "parent_id" }` | `201`. `parent_id` `null` or `0` puts the folder at the top level. A folder made inside a private folder is private too. `400` when the parent is not visible to you. |
+| `PATCH /folders/{id}` | `{ "name", "parent_id", "private" }` | Renames or moves the folder, its directory, and everything under it. `private` `true` makes it visible to you only, `false` shares it again. A folder that is moved out of a private folder stays private until you share it. `400` for INBOX and Trash, and when the folder holds a private folder of another user. `404` for a folder you cannot see. |
+| `DELETE /folders/{id}` | | `204`. `409 IN_USE` while it holds documents or subfolders. `400` for INBOX and Trash. `404` for a folder you cannot see. |
 
 ## Types and tags
 

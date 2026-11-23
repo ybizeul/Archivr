@@ -50,6 +50,7 @@ func (s *server) listDocuments(w http.ResponseWriter, r *http.Request, user stor
 		Sort:      strings.TrimSpace(q.Get("sort")),
 		Limit:     intParam(q.Get("limit"), 50),
 		Offset:    intParam(q.Get("offset"), 0),
+		ViewerID:  user.ID, // documents in other users' private folders are left out
 	}
 	if q.Get("inbox") == "1" {
 		f.FolderID = archive.InboxID
@@ -102,7 +103,7 @@ func (s *server) getDocument(w http.ResponseWriter, r *http.Request, user store.
 	if !ok {
 		return
 	}
-	doc, err := s.Store.GetDocument(r.Context(), id)
+	doc, err := s.Store.GetDocumentFor(r.Context(), user.ID, id)
 	if err != nil {
 		s.writeStoreError(w, err)
 		return
@@ -137,6 +138,15 @@ func (s *server) patchDocument(w http.ResponseWriter, r *http.Request, user stor
 		return
 	}
 	writeJSON(w, http.StatusOK, doc)
+}
+
+// alreadyFiled is the message for an upload whose bytes are already in the archive. It names
+// the document only when the user can see it: the number of a private document is not given out.
+func (s *server) alreadyFiled(r *http.Request, user store.User, id int64) string {
+	if ok, err := s.Store.DocumentVisibleTo(r.Context(), user.ID, id); err != nil || !ok {
+		return "this file is already filed"
+	}
+	return "this file is already filed as No. " + strconv.FormatInt(id, 10)
 }
 
 // markFavorite sets doc.Favorite for the signed-in user.
@@ -194,7 +204,7 @@ func (s *server) emptyTrash(w http.ResponseWriter, r *http.Request, _ store.User
 
 // uploadDocument files one uploaded file into INBOX. Multipart fields: file, an optional title, and an
 // optional valid_until (YYYY-MM-DD): the document moves to Trash once that day has passed.
-func (s *server) uploadDocument(w http.ResponseWriter, r *http.Request, _ store.User) {
+func (s *server) uploadDocument(w http.ResponseWriter, r *http.Request, user store.User) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes)
 	if err := r.ParseMultipartForm(8 << 20); err != nil {
 		var tooBig *http.MaxBytesError
@@ -242,12 +252,11 @@ func (s *server) uploadDocument(w http.ResponseWriter, r *http.Request, _ store.
 	case ingest.Imported:
 		writeJSON(w, http.StatusCreated, res.Document)
 	case ingest.Duplicate:
-		writeError(w, http.StatusConflict, "DUPLICATE",
-			"this file is already filed as No. "+strconv.FormatInt(res.Document.ID, 10))
+		writeError(w, http.StatusConflict, "DUPLICATE", s.alreadyFiled(r, user, res.Document.ID))
 	case ingest.AlreadyImported:
 		msg := "this file was already imported"
 		if res.Document.ID != 0 {
-			msg = "this file is already filed as No. " + strconv.FormatInt(res.Document.ID, 10)
+			msg = s.alreadyFiled(r, user, res.Document.ID)
 		}
 		writeError(w, http.StatusConflict, "DUPLICATE", msg)
 	default:
@@ -296,6 +305,11 @@ func (s *server) replaceDocumentFile(w http.ResponseWriter, r *http.Request, use
 	if err == nil {
 		err = s.markFavorite(r, user, &doc)
 	}
+	var dup *archive.DuplicateError
+	if errors.As(err, &dup) {
+		writeError(w, http.StatusConflict, "DUPLICATE", s.alreadyFiled(r, user, dup.Document.ID))
+		return
+	}
 	if err != nil {
 		s.writeStoreError(w, err)
 		return
@@ -304,12 +318,12 @@ func (s *server) replaceDocumentFile(w http.ResponseWriter, r *http.Request, use
 }
 
 // documentFile streams the stored file. It is served inline, so the browser can show it.
-func (s *server) documentFile(w http.ResponseWriter, r *http.Request, _ store.User) {
+func (s *server) documentFile(w http.ResponseWriter, r *http.Request, user store.User) {
 	id, ok := pathID(w, r)
 	if !ok {
 		return
 	}
-	doc, err := s.Store.GetDocument(r.Context(), id)
+	doc, err := s.Store.GetDocumentFor(r.Context(), user.ID, id)
 	if err != nil {
 		s.writeStoreError(w, err)
 		return
@@ -338,12 +352,12 @@ func (s *server) documentFile(w http.ResponseWriter, r *http.Request, _ store.Us
 	http.ServeContent(w, r, doc.Filename, info.ModTime(), f)
 }
 
-func (s *server) documentThumbnail(w http.ResponseWriter, r *http.Request, _ store.User) {
+func (s *server) documentThumbnail(w http.ResponseWriter, r *http.Request, user store.User) {
 	id, ok := pathID(w, r)
 	if !ok {
 		return
 	}
-	doc, err := s.Store.GetDocument(r.Context(), id)
+	doc, err := s.Store.GetDocumentFor(r.Context(), user.ID, id)
 	if err != nil {
 		s.writeStoreError(w, err)
 		return
@@ -369,12 +383,12 @@ func (s *server) documentThumbnail(w http.ResponseWriter, r *http.Request, _ sto
 }
 
 // documentSuggestions proposes dates and titles from the OCR text. The user chooses.
-func (s *server) documentSuggestions(w http.ResponseWriter, r *http.Request, _ store.User) {
+func (s *server) documentSuggestions(w http.ResponseWriter, r *http.Request, user store.User) {
 	id, ok := pathID(w, r)
 	if !ok {
 		return
 	}
-	if _, err := s.Store.GetDocument(r.Context(), id); err != nil {
+	if _, err := s.Store.GetDocumentFor(r.Context(), user.ID, id); err != nil {
 		s.writeStoreError(w, err)
 		return
 	}
@@ -391,7 +405,7 @@ func (s *server) reOCR(w http.ResponseWriter, r *http.Request, user store.User) 
 	if !ok {
 		return
 	}
-	if _, err := s.Store.GetDocument(r.Context(), id); err != nil {
+	if _, err := s.Store.GetDocumentFor(r.Context(), user.ID, id); err != nil {
 		s.writeStoreError(w, err)
 		return
 	}

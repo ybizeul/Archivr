@@ -664,6 +664,21 @@ html[data-mantine-color-scheme='dark'] .mantine-Button-root[data-variant='filled
   background: var(--ax-selected);
 }
 
+/* The left slot of a folder menu item. It has a fixed width, so labels line up with or without a check mark. */
+.ax-menu-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+}
+
+/* A private folder gets its own icon in the stamp colour, which no other tree icon uses. */
+.ax-private-icon {
+  color: var(--ax-stamp);
+  flex: none;
+}
+
 /* Favorites is a virtual folder pinned above the real ones. */
 .ax-tree-favorites {
   display: flex;
