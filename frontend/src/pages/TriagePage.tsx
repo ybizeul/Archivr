@@ -269,7 +269,8 @@ export function TriagePage() {
       if (changes.validUntil !== undefined) body.valid_until = changes.validUntil
       if (changes.type) body.type = changes.type
       if (changes.correspondent) body.correspondent = changes.correspondent
-      if (changes.addTags.length > 0) body.tags = [...new Set([...d.tags, ...changes.addTags])]
+      if (changes.clearTags) body.tags = []
+      else if (changes.addTags.length > 0) body.tags = [...new Set([...d.tags, ...changes.addTags])]
       try {
         await patch.mutateAsync({ id: d.id, patch: body })
         done++
@@ -349,7 +350,7 @@ export function TriagePage() {
               ? `Every document matching ${viewLabel(activeType, activeCorrespondent, activeTags)}`
               : 'Every document in the inbox'}{' '}
           will be filed
-          with the folder and the fields you changed below. Each keeps its own title, and added tags are merged with its existing ones.
+          with the folder and the fields you changed below. Each keeps its own title, and added tags are merged with its existing ones unless the tags were cleared.
         </Text>
         {bulkValues && (
           <Stack gap={2}>
@@ -374,6 +375,11 @@ export function TriagePage() {
             {bulkValues.correspondent && (
               <Text size="sm">
                 <b>Correspondent:</b> {bulkValues.correspondent}
+              </Text>
+            )}
+            {bulkValues.clearTags && (
+              <Text size="sm">
+                <b>Tags:</b> cleared (all tags are removed)
               </Text>
             )}
             {bulkValues.addTags.length > 0 && (
@@ -756,6 +762,8 @@ interface BulkChanges {
   type?: string
   correspondent?: string
   addTags: string[]
+  /** The tags field was emptied on the card, so every document loses all of its tags. */
+  clearTags: boolean
 }
 
 function FilingCard({
@@ -830,6 +838,8 @@ function FilingCard({
       correspondent: v.correspondent !== doc.correspondent ? v.correspondent : undefined,
       // Tags already on the viewed document are not pushed to the others; only the newly added ones are.
       addTags: v.tags.filter((t) => !doc.tags.includes(t)),
+      // Emptying a field that had tags is an explicit change: it removes the tags from every document.
+      clearTags: doc.tags.length > 0 && v.tags.length === 0,
     })
   }
 
