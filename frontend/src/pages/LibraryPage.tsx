@@ -1,16 +1,16 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { Badge, Box, Button, Collapse, Group, Input, Pagination, Paper, SegmentedControl, Select, Stack, Table, Text, TextInput, Title, UnstyledButton, Switch, Loader } from '@mantine/core'
 import { useDebouncedValue, useLocalStorage, useMediaQuery } from '@mantine/hooks'
-import { IconAdjustmentsHorizontal, IconChevronDown, IconChevronUp, IconFolder, IconLayoutGrid, IconList, IconSearch } from '@tabler/icons-react'
+import { IconAdjustmentsHorizontal, IconChevronDown, IconChevronUp, IconCornerLeftUp, IconFolder, IconLayoutGrid, IconList, IconSearch } from '@tabler/icons-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useDocuments, useFolders, useTypes } from '../api/queries'
-import type { Document } from '../api/types'
+import type { Document, Folder } from '../api/types'
 import { useAuth } from '../auth/context'
 import { DateField } from '../components/DateField'
 import { EmptyTrashDialog } from '../components/EmptyTrashDialog'
 import { LibraryBrowser } from '../components/LibraryBrowser'
 import { Snippet } from '../components/Snippet'
-import { accession, formatDate, folderLabel, folderTitle, isTrash, OCR_LABEL } from '../lib/format'
+import { accession, formatDate, folderLabel, folderName, folderTitle, isTrash, OCR_LABEL } from '../lib/format'
 import { rememberLibraryLocation } from '../lib/libraryLocation'
 
 const PAGE_SIZE = 50
@@ -117,6 +117,17 @@ export function LibraryPage() {
   // Emptying Trash is permanent, so only admins are offered it.
   const canEmptyTrash = user?.role === 'admin' && currentFolder !== undefined && isTrash(currentFolder)
   const trashCount = canEmptyTrash ? currentFolder.document_count : 0
+  // With "Include subfolders" off, only this folder's own documents are listed, so its direct subfolders appear as cards to browse deeper.
+  const showSubfolders = folder !== undefined && !subtree && !q && page === 1 && !(currentFolder && isTrash(currentFolder))
+  const subfolders = showSubfolders
+    ? (folders.data ?? []).filter((f) => f.parent_id === folder).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }))
+    : []
+  // The "up" card is always offered inside a folder; a top-level folder goes up to all documents.
+  const parentFolder = currentFolder?.parent_id != null ? folders.data?.find((f) => f.id === currentFolder.parent_id) : undefined
+  const parentCard: ParentCard | undefined =
+    folder !== undefined && currentFolder
+      ? { id: parentFolder?.id, label: parentFolder ? folderTitle(parentFolder) : 'All documents' }
+      : undefined
   const title = q ? `Results for “${q}”` : favorites ? 'Favorites' : currentFolder ? (folderTitle(currentFolder)) : 'All documents'
   const activeFilters = [type, from, to, ocr, sort].filter(Boolean).length
   const pages = Math.max(1, Math.ceil((docs.data?.total ?? 0) / PAGE_SIZE))
@@ -274,6 +285,14 @@ export function LibraryPage() {
           </Collapse>
         </Box>
 
+        {(parentCard || subfolders.length > 0) && (
+          <FolderGrid
+            folders={subfolders}
+            parent={parentCard}
+            onOpen={(id) => update({ folder: id === undefined ? undefined : String(id), favorites: undefined })}
+          />
+        )}
+
         {!docs.isPending && (docs.data?.items.length ?? 0) > 0 && view === 'grid' ? (
           <DocumentGrid items={docs.data?.items ?? []} showSnippet={q !== ''} onOpen={(id) => navigate(`/documents/${id}`)} />
         ) : (
@@ -327,6 +346,52 @@ export function LibraryPage() {
         </Group>
       </Box>
     </Box>
+  )
+}
+
+/** Where the "up" card leads: a folder id, or undefined for all documents. */
+interface ParentCard {
+  id: number | undefined
+  label: string
+}
+
+/** One card per direct subfolder of the current folder; opening a card browses into it. */
+function FolderGrid({
+  folders,
+  parent,
+  onOpen,
+}: {
+  folders: Folder[]
+  parent?: ParentCard
+  onOpen: (id: number | undefined) => void
+}) {
+  return (
+    <ul className="ax-folder-grid" aria-label="Folders">
+      {parent && (
+        <li>
+          <UnstyledButton className="ax-folder-tile" onClick={() => onOpen(parent.id)} aria-label={`Up to ${parent.label}`}>
+            <IconCornerLeftUp size={22} stroke={1.5} className="ax-accent" aria-hidden="true" />
+            <div className="ax-folder-tile-text">
+              <Text size="sm" fw={600} truncate>
+                {parent.label}
+              </Text>
+            </div>
+          </UnstyledButton>
+        </li>
+      )}
+      {folders.map((f) => (
+        <li key={f.id}>
+          <UnstyledButton className="ax-folder-tile" onClick={() => onOpen(f.id)} aria-label={`Folder ${folderName(f)}`}>
+            <IconFolder size={22} stroke={1.5} className="ax-accent" aria-hidden="true" />
+            <div className="ax-folder-tile-text">
+              <Text size="sm" fw={600} truncate>
+                {folderName(f)} ({f.document_count})
+              </Text>
+            </div>
+          </UnstyledButton>
+        </li>
+      ))}
+    </ul>
   )
 }
 

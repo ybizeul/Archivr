@@ -1084,6 +1084,58 @@ html[data-mantine-color-scheme='dark'] .mantine-Button-root[data-variant='filled
   }
 }
 
+/* Subfolder cards above the document list: compact, one per direct child folder. */
+.ax-folder-grid {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 10px;
+}
+
+.ax-folder-grid li {
+  display: flex;
+  min-width: 0;
+}
+
+.ax-folder-tile {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  text-align: left;
+  color: var(--ax-ink);
+  background: var(--ax-sheet);
+  border: 1px solid var(--ax-rule);
+  border-radius: 4px;
+}
+
+.ax-folder-tile:hover {
+  border-color: var(--ax-accent);
+}
+
+.ax-folder-tile:focus-visible {
+  outline: 2px solid var(--ax-accent);
+  outline-offset: 2px;
+}
+
+.ax-folder-tile svg {
+  flex-shrink: 0;
+}
+
+.ax-folder-tile-text {
+  min-width: 0;
+}
+
+@media (max-width: 767px) {
+  .ax-folder-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 /* Library card view: a responsive grid of tiles, thumbnail on top, metadata below. */
 .ax-doc-grid {
   list-style: none;
