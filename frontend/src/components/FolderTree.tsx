@@ -170,27 +170,30 @@ export function FolderTree({ selected, onSelect, favoritesSelected = false, onSe
         </ActionIcon>
       </Group>
 
-      <Box className={`ax-tree-row ax-tree-favorites${favoritesSelected ? ' active' : ''}`}>
-        <UnstyledButton
-          className="ax-tree-link"
-          onClick={onSelectFavorites}
-          aria-current={favoritesSelected ? 'true' : undefined}
-        >
-          {favoritesSelected ? (
-            <IconBookmarkFilled size={16} className="ax-favorite-icon" />
-          ) : (
-            <IconBookmark size={16} stroke={1.8} className="ax-favorite-icon" />
-          )}
-          <Text component="span" size="sm" truncate className="ax-tree-name">
-            Favorites
-          </Text>
-          {favoriteCount !== undefined && (
-            <Text component="span" size="xs" c="dimmed" className="ax-mono">
-              {favoriteCount}
+      {/* Hidden while the user has no favorite documents. */}
+      {favoriteCount !== 0 && (
+        <Box className={`ax-tree-row ax-tree-favorites${favoritesSelected ? ' active' : ''}`}>
+          <UnstyledButton
+            className="ax-tree-link"
+            onClick={onSelectFavorites}
+            aria-current={favoritesSelected ? 'true' : undefined}
+          >
+            {favoritesSelected ? (
+              <IconBookmarkFilled size={16} className="ax-favorite-icon" />
+            ) : (
+              <IconBookmark size={16} stroke={1.8} className="ax-favorite-icon" />
+            )}
+            <Text component="span" size="sm" truncate className="ax-tree-name">
+              Favorites
             </Text>
-          )}
-        </UnstyledButton>
-      </Box>
+            {favoriteCount !== undefined && (
+              <Text component="span" size="xs" c="dimmed" className="ax-mono">
+                {favoriteCount}
+              </Text>
+            )}
+          </UnstyledButton>
+        </Box>
+      )}
 
       {pinned.map((f) => {
         const active = selected === f.id && !favoritesSelected
