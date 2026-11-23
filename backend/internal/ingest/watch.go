@@ -2,6 +2,7 @@ package ingest
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -23,12 +24,19 @@ type fileSig struct {
 	mod  time.Time
 }
 
+// errIncomplete means a settled file is a PDF cut short. It stays in place.
+var errIncomplete = errors.New("incomplete file")
+
 // Watcher imports files dropped into a folder.
 //
 // A file is imported only after two scans see the same size and modification
 // time, and it is at least settle old. A partly copied file is never read.
 // Imported files move to .imported/, unsupported ones to .rejected/, and both
 // are kept so nothing is lost. Errors leave the file in place to retry.
+//
+// A PDF with no end-of-file marker is held in place, not imported and not moved.
+// It is read again only once its size or modification time changes, so a copy
+// that is still being written is picked up whole when it finishes.
 type Watcher struct {
 	Importer *Importer
 	Dir      string
@@ -37,6 +45,7 @@ type Watcher struct {
 	Log      *slog.Logger
 
 	prev map[string]fileSig
+	held map[string]fileSig // files judged incomplete, by the signature they had then
 }
 
 // Run scans until ctx is cancelled.
@@ -105,7 +114,18 @@ func (w *Watcher) Scan(ctx context.Context) error {
 		if !seen || prev != sig || time.Since(sig.mod) < w.settleFor() {
 			continue // still changing, or too new to trust
 		}
+		if heldSig, ok := w.held[name]; ok && heldSig == sig {
+			continue // already judged incomplete, and it has not changed since
+		}
 		done, err := w.handle(ctx, name, info.ModTime())
+		if errors.Is(err, errIncomplete) {
+			w.logger().Warn("watch holding incomplete PDF until it changes", "file", name, "reason", err)
+			if w.held == nil {
+				w.held = map[string]fileSig{}
+			}
+			w.held[name] = sig
+			continue
+		}
 		if err != nil {
 			w.logger().Error("watch import failed, will retry", "file", name, "error", err)
 			continue
@@ -120,6 +140,11 @@ func (w *Watcher) Scan(ctx context.Context) error {
 			w.prev[name] = sig
 		}
 	}
+	for name := range w.held {
+		if _, ok := current[name]; !ok {
+			delete(w.held, name) // gone from the folder
+		}
+	}
 	return nil
 }
 
@@ -129,6 +154,9 @@ func (w *Watcher) handle(ctx context.Context, name string, mod time.Time) (bool,
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return false, err
+	}
+	if reason := IncompletePDF(data); reason != "" {
+		return false, fmt.Errorf("%w: %s", errIncomplete, reason)
 	}
 	date := mod.Local().Format("2006-01-02")
 	res, err := w.Importer.Import(ctx, Candidate{

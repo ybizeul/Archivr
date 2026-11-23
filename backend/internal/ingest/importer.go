@@ -64,6 +64,10 @@ func (im *Importer) Import(ctx context.Context, c Candidate) (Result, error) {
 	if mime == "" {
 		return Result{Status: Unsupported, Reason: reason}, nil
 	}
+	if reason := IncompletePDF(c.Data); reason != "" {
+		// A cut-short copy would be filed as a broken document. Refuse it instead.
+		return Result{Status: Unsupported, Reason: reason}, nil
+	}
 	sum := sha256.Sum256(c.Data)
 	digest := hex.EncodeToString(sum[:])
 
