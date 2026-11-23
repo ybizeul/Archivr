@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { ActionIcon, AppShell, Badge, Box, Button, Group, Menu, Text, TextInput, Tooltip } from '@mantine/core'
 import { useDebouncedValue, useMediaQuery } from '@mantine/hooks'
 import { Spotlight, spotlight, type SpotlightActionData } from '@mantine/spotlight'
-import { IconCalendar, IconCheck, IconChevronDown, IconChevronLeft, IconFolders, IconInbox, IconLogout, IconSearch, IconSettings } from '@tabler/icons-react'
+import { IconCalendar, IconCheck, IconChevronDown, IconChevronLeft, IconFolders, IconInbox, IconKey, IconLogout, IconSearch, IconSettings } from '@tabler/icons-react'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/context'
 import { useDocuments, useInboxCount } from '../api/queries'
@@ -190,6 +190,9 @@ function UserMenu() {
             ))}
           </Menu.Sub.Dropdown>
         </Menu.Sub>
+        <Menu.Item leftSection={<IconKey size={16} stroke={1.6} />} component={Link} to="/access">
+          API access
+        </Menu.Item>
         <Menu.Divider />
         <Menu.Item leftSection={<IconLogout size={16} stroke={1.6} />} onClick={() => void signOut()}>
           Sign out

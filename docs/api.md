@@ -4,7 +4,7 @@ All routes are under `/api/v1`, except `GET /healthz`. Bodies are JSON, sent wit
 
 ## Conventions
 
-**Authentication.** Sign-in sets the HttpOnly cookie `archivr_session`. API clients can instead send `Authorization: Bearer <token>`, where the token comes from the login response.
+**Authentication.** Sign-in sets the HttpOnly cookie `archivr_session`. API clients can instead send `Authorization: Bearer <token>`, where the token comes from the login response. A personal access token (`arc_…`, see [Personal access tokens](#personal-access-tokens)) is not accepted here: it opens only `/api/v1/mcp`.
 
 **Roles.** Routes marked *admin* return `403 FORBIDDEN` to a user with the `user` role.
 
@@ -27,7 +27,7 @@ Codes in use:
 | 403 | `FORBIDDEN`, `LOCAL_LOGIN_DISABLED`, `CROSS_ORIGIN` | Admin route for a user, local sign-in turned off, or a browser request from another site. |
 | 404 | `NOT_FOUND`, `FILE_MISSING`, `THUMBNAIL_UNAVAILABLE`, `SHARE_INVALID` | Unknown ID or path. The file is missing on disk, or the type has no preview. The share link is not valid. |
 | 410 | `SHARE_EXPIRED` | The share link is past its expiry. |
-| 409 | `DUPLICATE`, `CONFLICT`, `FILE_EXISTS`, `IN_USE`, `IMPORT_RUNNING` | Same bytes already filed; name already taken; a file with that name is already on disk; the item is still in use; or a Paperless import is already running. |
+| 409 | `DUPLICATE`, `CONFLICT`, `FILE_EXISTS`, `IN_USE`, `IMPORT_RUNNING`, `TOO_MANY_TOKENS` | Same bytes already filed; name already taken; a file with that name is already on disk; the item is still in use; a Paperless import is already running; or the user already has 50 tokens. |
 | 413 | `TOO_LARGE` | Upload over 100 MB. |
 | 415 | `UNSUPPORTED_TYPE`, `UNSUPPORTED_MEDIA_TYPE` | Upload is not a supported type, or a body was sent without `Content-Type: application/json`. |
 | 429 | `RATE_LIMITED` | Too many sign-in attempts. See `POST /auth/login`. |
@@ -85,6 +85,56 @@ A share link opens one document for anyone who has it, without sign-in. It is a 
 The link grants nothing else: the token is not a session, and the share and session signing keys differ. Both come from `JWT_SECRET`, so a link survives a restart exactly when sessions do, and changing `JWT_SECRET` ends every link. A link cannot be cancelled on its own. Deleting the document ends it. Share responses are sent with `Cache-Control: private, no-store` and `Referrer-Policy: no-referrer`.
 
 The web app shows a link at `/share/{token}`.
+
+## Personal access tokens
+
+A personal access token lets a tool, such as an MCP client, read the archive as one user. Tokens are made and revoked with a real sign-in (cookie or login token). A token cannot manage tokens, and it is accepted only by `/api/v1/mcp`: every other route answers `401` to it.
+
+A token is `arc_` followed by 43 characters. Only its SHA-256 is stored, so it is shown once, in the response that creates it. It stops working when it is revoked, when it expires, or when its owner is deleted. Each user can hold 50 live tokens.
+
+| Method and path | Body | Notes |
+| --- | --- | --- |
+| `GET /tokens` | | The signed-in user's live tokens: `{ "items" }` with `id`, `name`, `prefix` (the first characters, to tell tokens apart), `created_at`, `last_used_at` (to the minute, `null` if unused) and `expires_at` (`null` for none). |
+| `POST /tokens` | `{ "name", "expires_in_days" }` | `201` with the same fields and `token`, the secret. `name` is 1 to 100 characters. `expires_in_days` is 1 to 3650, or absent for a token that does not expire. `400 INVALID`, `409 TOO_MANY_TOKENS`. |
+| `DELETE /tokens/{id}` | | Revokes the token. `204`. `404` for a token that is not yours or is already revoked. |
+
+The web app manages them at `/access`, under **API access** in the account menu.
+
+## MCP server
+
+`/api/v1/mcp` is a read-only [Model Context Protocol](https://modelcontextprotocol.io) server over Streamable HTTP. A client can browse folders, list and search documents, and read a document with its metadata and text. Nothing can be created, changed or deleted.
+
+Send `Authorization: Bearer arc_…` with every request. The session cookie does not work here. Without a valid token the answer is `401` with `WWW-Authenticate: Bearer`. The server keeps no session between requests (stateless: `POST` only, JSON replies, `GET` and `DELETE` return `405`), and each request is checked against its token, so a revoked token stops at once.
+
+Everything is scoped to the token's owner, as in the web app: private folders of other users do not exist for it, and admins get no exception. A document the user cannot see is reported as not found, the same as one that does not exist.
+
+Example client configuration (Cursor, `.cursor/mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "archivr": {
+      "url": "https://archive.example.org/api/v1/mcp",
+      "headers": { "Authorization": "Bearer arc_…" }
+    }
+  }
+}
+```
+
+Clients that only speak stdio can bridge with `npx mcp-remote https://archive.example.org/api/v1/mcp --header "Authorization: Bearer arc_…"`.
+
+Tools. All are marked read-only. Results are returned as structured content.
+
+| Tool | Input | Result |
+| --- | --- | --- |
+| `list_folders` | `parent_id` (optional): omit for every folder, `0` for the top level, an id for its direct subfolders | `{ "folders" }`, as `GET /folders`. |
+| `list_documents` | `folder_id`, `subtree`, `type_id`, `tag`, `from`, `to`, `sort` (`newest`, `oldest`, `date`, `title`), `limit` (default 25, at most 100), `offset` | `{ "items", "total", "limit", "offset" }`. Items carry `id`, `title`, `document_date`, `type`, `correspondent`, `folder_path`, `tags`, `filename`, `mime`, `size`, `ocr_status`, `valid_until`, `source`, `favorite`, `created_at` and `updated_at`. Trash is left out unless `folder_id` is its id. |
+| `search_documents` | `query` (required), plus the filters of `list_documents` except `sort` | The same, ranked by relevance, with `snippet` text where the matching words are in `**bold**`. Same search rules as `GET /documents?q=`. A query with no word or number is an error. |
+| `get_document` | `id`, `offset`, `max_chars` (default 20000, at most 100000) | The document's metadata, and `text` (the OCR or text-layer text, empty until OCR is done), `text_length`, `text_offset`, `truncated` and `next_offset`. Offsets count characters. Page through a long text by passing `next_offset` as `offset` while `truncated` is true. |
+| `get_document_file` | `id` | The original file: an image for image types, an embedded resource (base64) for PDFs. Files over 10 MB are refused. |
+| `list_catalog` | `query` (optional, narrows correspondents and tags) | `{ "types", "correspondents", "tags" }` with ids, names and document counts, to find values for filters. |
+
+Resources: the template `archivr://documents/{id}` reads one document as two parts, its metadata as JSON and its text as plain text. An unknown or hidden document is a resource-not-found error.
 
 ## Folders
 

@@ -4,8 +4,10 @@ import { useMemo } from 'react'
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from './client'
 import type {
+  ApiToken,
   AuthSettings,
   Correspondent,
+  CreatedApiToken,
   DocType,
   Document,
   DocumentDetail,
@@ -67,6 +69,7 @@ export const keys = {
   adminPaperlessImport: ['admin', 'paperless', 'import'] as const,
   adminPaperlessMapping: ['admin', 'paperless', 'mapping'] as const,
   adminUsers: ['admin', 'users'] as const,
+  tokens: ['tokens'] as const,
 }
 
 export function useInboxCount() {
@@ -253,6 +256,28 @@ export function useEmptyTrash() {
 }
 
 /** Signs a link to one document, valid for `expiresInSeconds`. Nothing changes on the document. */
+/** The signed-in user's personal access tokens, for tools such as MCP clients. */
+export function useTokens() {
+  return useQuery({
+    queryKey: keys.tokens,
+    queryFn: () => api.get<{ items: ApiToken[] }>('/tokens').then((r) => r.items),
+  })
+}
+
+export function useTokenMutations() {
+  const qc = useQueryClient()
+  const refresh = () => qc.invalidateQueries({ queryKey: keys.tokens })
+  const create = useMutation({
+    mutationFn: (body: { name: string; expires_in_days?: number }) => api.post<CreatedApiToken>('/tokens', body),
+    onSuccess: refresh,
+  })
+  const revoke = useMutation({
+    mutationFn: (id: number) => api.del<void>(`/tokens/${id}`),
+    onSuccess: refresh,
+  })
+  return { create, revoke }
+}
+
 export function useCreateShare() {
   return useMutation({
     mutationFn: ({ id, expiresInSeconds }: { id: number; expiresInSeconds: number }) =>

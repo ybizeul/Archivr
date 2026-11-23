@@ -49,6 +49,20 @@ export interface DocumentDetail extends Document {
 }
 
 /** A signed share link, as returned when one is created. */
+/** A personal access token as listed. The secret is only returned when it is created. */
+export interface ApiToken {
+  id: number
+  name: string
+  prefix: string
+  created_at: string
+  last_used_at: string | null
+  expires_at: string | null
+}
+
+export interface CreatedApiToken extends ApiToken {
+  token: string
+}
+
 export interface ShareLink {
   url: string
   token: string

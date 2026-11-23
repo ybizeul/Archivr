@@ -30,7 +30,8 @@ Archivr is one Go process. It serves the API, the embedded web app, the OCR work
 | `internal/ocr` | Engine detection, text extraction, the worker pool, requeue of pending work. |
 | `internal/preview` | Thumbnails, cached by content hash. |
 | `internal/suggest` | Dates and titles proposed from OCR text. Suggestions only; the user decides. |
-| `internal/auth` | Local passwords (argon2id), session tokens, OIDC flow, login rate limiting. |
+| `internal/auth` | Local passwords (argon2id), session tokens, personal access tokens, OIDC flow, login rate limiting. |
+| `internal/mcp` | The read-only MCP server: its tools and resources, built per request for one user. It reads through the store's viewer-scoped methods and knows nothing about HTTP authentication. |
 | `internal/api` | HTTP handlers, the route table, and the error format. |
 
 ## Mutation rules
@@ -106,6 +107,7 @@ Visual tokens (Cyanotype) are in `frontend/src/app.css` and `frontend/src/theme.
 - SSO roles are re-synced on each sign-in from the groups claim (see the README). The admin group must be set before SSO sign-ins.
 - Sessions: HS256 JWT in an HttpOnly cookie, `SameSite=Lax`, `Secure` when served over HTTPS. The user is re-read from the database on each request, so a removed account or a demotion takes effect at once.
 - Share links: a JWT signed with a key derived from the session secret, with its own audience (`archivr:share`), so it is never accepted as a session and a session is never accepted as a link. It carries the document number and the expiry the user chose (1 minute to 365 days), and opens only that document's metadata subset and file. Links are stateless, so one cannot be revoked alone: deleting the document, or changing `JWT_SECRET`, ends them. Without `JWT_SECRET`, links end when Archivr restarts.
+- Personal access tokens: `arc_` plus 32 random bytes. Only the SHA-256 is stored, and the token is shown once. A token opens only `/api/v1/mcp`, through its own middleware that ignores the session cookie, and the session check in turn refuses tokens, so neither credential works in the other's place. The owner is re-read on each request, like a session, and a token can be revoked, can expire, and goes with its user. The MCP endpoint is stateless, so there is no session to hijack. Every tool calls the store with the token owner's ID, never the unrestricted system viewer, so private folders stay private to MCP clients too. Go's localhost Host-header check for the MCP handler is turned off, because it would refuse a reverse proxy on the same machine, and it guards against a browser acting with ambient credentials, which this endpoint does not accept.
 - Cross-site requests: the API has no CSRF token. Instead, Go's `http.CrossOriginProtection` refuses every non-`GET` request that the browser marks as coming from another origin (`Sec-Fetch-Site`, or `Origin`), and JSON bodies must carry `Content-Type: application/json`, which a page on another site cannot send without a CORS preflight. The session cookie is also `SameSite=Lax`.
 - Headers: every response has `X-Content-Type-Options: nosniff` and `Referrer-Policy: same-origin`, and `Strict-Transport-Security` when served over HTTPS. Web app pages also have a content security policy that allows only same-origin scripts, workers and connections, and `frame-ancestors 'none'`. Styles allow `'unsafe-inline'` because Mantine injects style elements.
 - Files are served with `nosniff` and `Content-Disposition: inline` on their stored type. Names are validated for path traversal and reserved characters.

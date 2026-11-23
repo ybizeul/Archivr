@@ -3,6 +3,7 @@ import { Center, Loader } from '@mantine/core'
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { useAuth } from './auth/context'
 import { AppLayout } from './components/AppLayout'
+import { AccessPage } from './pages/AccessPage'
 import { AdminPage } from './pages/AdminPage'
 import { DocumentPage } from './pages/DocumentPage'
 import { LibraryPage } from './pages/LibraryPage'
@@ -44,6 +45,7 @@ export default function App() {
         <Route path="inbox" element={<TriagePage />} />
         <Route path="library" element={<LibraryPage />} />
         <Route path="documents/:id" element={<DocumentPage />} />
+        <Route path="access" element={<AccessPage />} />
         <Route path="admin" element={<AdminPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

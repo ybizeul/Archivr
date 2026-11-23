@@ -19,6 +19,7 @@ Documents arrive from a scanner folder, by email, or by upload. Each one gets a 
 - **Expiry dates.** Give a document a "valid until" date, such as an insurance certificate. The day after, it moves to Trash.
 - **Trash.** Deleted documents go to Trash first. Restore them, or delete them for good from there.
 - **Share links.** Send one document to someone without an account, using a link that expires when you choose, from one minute to a year.
+- **MCP server.** Connect an AI client such as Cursor or Claude to `/api/v1/mcp` with a personal access token, and it can browse folders, search, and read documents with their metadata and text. It is read-only and sees only what its owner sees. Create tokens under **API access** in the account menu. See [docs/api.md](docs/api.md#mcp-server).
 - **Several users.** Local accounts, or single sign-on with any OpenID Connect provider. Admins manage accounts, mail intake, document types and imports.
 - **Plain files on disk.** Documents are stored as `10001 - Lease renewal.pdf` in folders that mirror your own, each with a small sidecar file holding its metadata.
 - **Backups.** Optional continuous replication of the database with Litestream.

@@ -13,6 +13,7 @@ import (
 	"github.com/archivr/backend/internal/archive"
 	"github.com/archivr/backend/internal/auth"
 	"github.com/archivr/backend/internal/ingest"
+	mcpserver "github.com/archivr/backend/internal/mcp"
 	"github.com/archivr/backend/internal/ocr"
 	"github.com/archivr/backend/internal/paperless"
 	"github.com/archivr/backend/internal/preview"
@@ -137,6 +138,20 @@ func NewRouter(d Deps) http.Handler {
 	mux.HandleFunc("GET /api/v1/tags", s.authed(false, s.listTags))
 	mux.HandleFunc("PATCH /api/v1/tags/{id}", s.authed(false, s.patchTag))
 	mux.HandleFunc("DELETE /api/v1/tags/{id}", s.authed(false, s.deleteTag))
+
+	// Personal access tokens for tools such as MCP clients. Managing them needs a real
+	// sign-in: a token cannot create or revoke tokens.
+	mux.HandleFunc("GET /api/v1/tokens", s.authed(false, s.listTokens))
+	mux.HandleFunc("POST /api/v1/tokens", s.authed(false, s.createToken))
+	mux.HandleFunc("DELETE /api/v1/tokens/{id}", s.authed(false, s.deleteToken))
+
+	// MCP server, read-only. Only a personal access token opens it, never the session cookie.
+	// It is registered before the /api/ catch-all below.
+	if d.Archive != nil {
+		mux.Handle("/api/v1/mcp", s.mcpAuth(mcpserver.Handler(mcpserver.Deps{
+			Store: d.Store, Layout: d.Archive.Layout, Log: d.Log,
+		})))
+	}
 
 	// Admin: sign-in, mail, OCR, Paperless import, users.
 	mux.HandleFunc("GET /api/v1/admin/settings/auth", s.authed(true, s.getAuthSettings))

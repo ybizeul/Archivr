@@ -89,6 +89,18 @@ The store layer keeps it in step with the document rows, inside the same transac
 | `role` | `admin` or `user`. |
 | `password_hash` | argon2id. Empty for accounts that only sign in through SSO. |
 
+### `api_tokens`
+
+Personal access tokens, for tools such as MCP clients. Rows go away with their user.
+
+| Column | Notes |
+| --- | --- |
+| `user_id` | The owner. The token acts as this user, with the same view of private folders. |
+| `name` | A label the user chose. |
+| `token_hash` | Hex SHA-256 of the token. Unique. The token itself is never stored. |
+| `prefix` | The first characters of the token, shown in the list. |
+| `created_at`, `last_used_at`, `expires_at`, `revoked_at` | UTC timestamps. `last_used_at` is updated at most once a minute. A token with `revoked_at` set or `expires_at` in the past is not accepted. |
+
 ### `settings`
 
 Key and JSON value. Keys in use:
