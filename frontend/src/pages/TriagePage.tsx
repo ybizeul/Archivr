@@ -181,6 +181,17 @@ export function TriagePage() {
       const target = e.target as HTMLElement | null
       if (target?.closest('input, textarea, select, [contenteditable="true"]')) return
       switch (e.key.toLowerCase()) {
+        case 'arrowdown':
+          // Keep the page from scrolling while the arrows step through the queue.
+          if (e.shiftKey) return
+          e.preventDefault()
+          move(1)
+          break
+        case 'arrowup':
+          if (e.shiftKey) return
+          e.preventDefault()
+          move(-1)
+          break
         case 'j':
           move(1)
           break
@@ -440,12 +451,12 @@ export function TriagePage() {
             {total > 0 ? `${Math.max(1, index + 1)} of ${total}` : ''}
           </Text>
           <Group gap={4} wrap="nowrap">
-            <Tooltip label="Previous (K)">
+            <Tooltip label="Previous (K or ↑)">
               <ActionIcon variant="default" aria-label="Previous document" onClick={() => move(-1)} disabled={index === 0 || filed !== null}>
                 <IconChevronUp size={16} stroke={1.6} />
               </ActionIcon>
             </Tooltip>
-            <Tooltip label="Next (J)">
+            <Tooltip label="Next (J or ↓)">
               <ActionIcon variant="default" aria-label="Next document" onClick={() => move(1)} disabled={index >= items.length - 1 || filed !== null}>
                 <IconChevronDown size={16} stroke={1.6} />
               </ActionIcon>
