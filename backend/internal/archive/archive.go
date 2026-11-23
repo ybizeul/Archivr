@@ -94,7 +94,8 @@ type Patch struct {
 	Tags          *[]string `json:"tags"`
 	FolderID      *int64    `json:"folder_id"`
 	// Rotation is how the browser turns the document, in degrees clockwise: 0, 90, 180 or 270.
-	// It is display metadata. The file on disk is never changed.
+	// The file on disk is never changed. A new rotation makes OCR read the document again,
+	// because OCR turns the pages the same way.
 	Rotation *int `json:"rotation"`
 	// ValidUntil is the last day the document is valid, YYYY-MM-DD. An empty string clears it.
 	// Moving a document out of Trash after it expired clears the date, unless the same patch sets one.
@@ -269,10 +270,11 @@ func (s *Service) today() string {
 
 // Update changes a document's metadata. A title, folder or type change may rename
 // or move the file. The move is the last step before commit and is undone if the
-// commit fails.
+// commit fails. A change of rotation marks the document for OCR again.
 func (s *Service) Update(ctx context.Context, id int64, p Patch) (store.Document, error) {
 	var out store.Document
 	var undo func()
+	rereadText := false
 	err := s.Store.InTx(ctx, func(tx *store.Store) error {
 		cur, err := tx.GetDocument(ctx, id)
 		if err != nil {
@@ -410,6 +412,13 @@ func (s *Service) Update(ctx context.Context, id int64, p Patch) (store.Document
 		if err := tx.SyncFTS(ctx, id); err != nil {
 			return err
 		}
+		if f.Rotation != cur.Rotation {
+			// Pages are turned before OCR, so the text must be read again.
+			if err := tx.SetOCRStatus(ctx, id, "pending", ""); err != nil {
+				return err
+			}
+			rereadText = true
+		}
 		out, err = tx.GetDocument(ctx, id)
 		if err != nil {
 			return err
@@ -432,6 +441,9 @@ func (s *Service) Update(ctx context.Context, id int64, p Patch) (store.Document
 		return store.Document{}, err
 	}
 	s.writeSidecar(out)
+	if rereadText && s.OCR != nil {
+		s.OCR.Enqueue(out.ID)
+	}
 	return out, nil
 }
 

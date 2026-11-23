@@ -78,6 +78,8 @@ SQLite runs in WAL mode, so a power loss can drop the last committed transaction
 
 - A PDF with a text layer is read with `pdftotext`. Less than 20 characters counts as no text layer.
 - Otherwise the first 40 pages are rendered at 300 dpi and read page by page, with the configured languages.
+- Each page image is turned before it is read. If the document has a saved rotation (set with the rotate buttons), that turn is used. Otherwise Tesseract's orientation detection finds the turn, and it is applied only when Tesseract is confident. Images are turned the same way. The file on disk is never changed.
+- Changing a document's rotation reads its text again. Documents read before this change keep their old text until **Run OCR again**.
 - If Tesseract is not installed, documents are marked `skipped`. Installing it later and pressing **Run OCR again** fixes them.
 - Work is queued on import and re-queued by a scanner every 30 seconds, so a restart never loses pending documents.
 - Each job has a time limit, set in the admin screen. Shutdown cancels running jobs, and they stay `pending` for the next start.

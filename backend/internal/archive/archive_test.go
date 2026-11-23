@@ -206,8 +206,54 @@ func TestUpdateRenamesAndMovesFileWithSidecar(t *testing.T) {
 	}
 }
 
-// Rotation is display metadata: it is stored and survives other edits, and the file on
-// disk is never touched.
+type recordingQueue struct{ ids []int64 }
+
+func (q *recordingQueue) Enqueue(id int64) { q.ids = append(q.ids, id) }
+
+// Turning a document changes how OCR reads its pages, so the text is read again. Other
+// edits do not queue OCR again.
+func TestRotationChangeQueuesOCRAgain(t *testing.T) {
+	svc, st, _ := newService(t)
+	queue := &recordingQueue{}
+	svc.OCR = queue
+	ctx := context.Background()
+	doc := create(t, svc, "Sideways scan", "sideways", 0)
+	if err := st.SaveOCRText(ctx, doc.ID, "garbage", "tesseract", "eng"); err != nil {
+		t.Fatal(err)
+	}
+	queue.ids = nil
+
+	title := "Renamed"
+	if _, err := svc.Update(ctx, doc.ID, Patch{Title: &title}); err != nil {
+		t.Fatal(err)
+	}
+	if len(queue.ids) != 0 {
+		t.Fatalf("title edit queued OCR: %v", queue.ids)
+	}
+
+	ninety := 90
+	got, err := svc.Update(ctx, doc.ID, Patch{Rotation: &ninety})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.OCRStatus != "pending" {
+		t.Fatalf("ocr = %q, want pending", got.OCRStatus)
+	}
+	if len(queue.ids) != 1 || queue.ids[0] != doc.ID {
+		t.Fatalf("queued = %v, want [%d]", queue.ids, doc.ID)
+	}
+
+	// The same turn again changes nothing, so nothing is queued.
+	queue.ids = nil
+	if _, err := svc.Update(ctx, doc.ID, Patch{Rotation: &ninety}); err != nil {
+		t.Fatal(err)
+	}
+	if len(queue.ids) != 0 {
+		t.Fatalf("unchanged rotation queued OCR: %v", queue.ids)
+	}
+}
+
+// Rotation is stored and survives other edits, and the file on disk is never touched.
 func TestRotationIsMetadataOnly(t *testing.T) {
 	svc, _, layout := newService(t)
 	ctx := context.Background()

@@ -160,7 +160,7 @@ func (p *Pool) process(ctx context.Context, id int64) {
 	}
 
 	jobCtx, cancel := context.WithTimeout(ctx, time.Duration(settings.TimeoutSeconds)*time.Second)
-	text, err := p.Engine.Extract(jobCtx, file, doc.Mime, settings.Languages)
+	text, err := p.Engine.Extract(jobCtx, file, doc.Mime, settings.Languages, doc.Rotation)
 	cancel()
 
 	if ctx.Err() != nil {

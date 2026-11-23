@@ -18,7 +18,8 @@ COPY backend/ ./
 COPY --from=web /src/frontend/dist/ ./cmd/archivr/dist/
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/archivr ./cmd/archivr
 
-# 3. Runtime: the server plus the OCR tools it calls. Tesseract reads English and French.
+# 3. Runtime: the server plus the OCR tools it calls. Tesseract reads English and French,
+# and the OSD data lets it detect sideways pages.
 FROM alpine:3.21
 ARG TARGETARCH
 
@@ -38,7 +39,7 @@ RUN set -eux; \
 
 RUN apk add --no-cache \
       ca-certificates tzdata \
-      tesseract-ocr tesseract-ocr-data-eng tesseract-ocr-data-fra \
+      tesseract-ocr tesseract-ocr-data-eng tesseract-ocr-data-fra tesseract-ocr-data-osd \
       poppler-utils \
  && adduser -D -h /data archivr
 COPY --from=api /out/archivr /usr/local/bin/archivr

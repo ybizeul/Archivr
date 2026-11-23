@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"image"
+	"image/png"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,6 +14,11 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	_ "image/jpeg"
+
+	_ "golang.org/x/image/tiff"
+	_ "golang.org/x/image/webp"
 )
 
 // ErrEngineMissing means a required binary is not installed. Documents are marked
@@ -27,6 +34,10 @@ const (
 	maxPages = 40
 	// ocrDPI is the resolution pages are rasterised at for OCR.
 	ocrDPI = 300
+	// minOrientationConfidence is how sure Tesseract must be before a page is turned
+	// to face up. Below it the page is read as it is, so a page with little text is
+	// never turned by mistake.
+	minOrientationConfidence = 1.5
 	// maxRenderEdge caps the longest edge of a rasterised page, in pixels. It is
 	// about the longest edge of an A4 page at 300 dpi. Without the cap, a scan on a
 	// very large page (poster size) rasterises to hundreds of megapixels, which
@@ -95,20 +106,24 @@ func Detect(ctx context.Context, e Engine) Status {
 // Extract returns the text of a document. PDFs use the text layer when it has
 // enough text, and otherwise rasterise each page (at ocrDPI, or less for very large
 // pages) and run OCR on it.
-func (e Engine) Extract(ctx context.Context, path, mime, languages string) (string, error) {
+//
+// turn is how the user has turned the document, in degrees clockwise (0, 90, 180 or
+// 270). When it is not 0 it is taken as the way up and page orientation is not
+// detected. When it is 0, each page's orientation is detected and corrected.
+func (e Engine) Extract(ctx context.Context, path, mime, languages string, turn int) (string, error) {
 	if e.Tesseract == "" {
 		return "", fmt.Errorf("%w: tesseract is not installed", ErrEngineMissing)
 	}
 	switch mime {
 	case "application/pdf":
-		return e.extractPDF(ctx, path, languages)
+		return e.extractPDF(ctx, path, languages, turn)
 	case "image/png", "image/jpeg", "image/tiff", "image/webp":
-		return e.tesseract(ctx, path, languages)
+		return e.readImage(ctx, path, languages, turn)
 	}
 	return "", fmt.Errorf("no OCR for %s", mime)
 }
 
-func (e Engine) extractPDF(ctx context.Context, path, languages string) (string, error) {
+func (e Engine) extractPDF(ctx context.Context, path, languages string, turn int) (string, error) {
 	if e.Pdftotext == "" || e.Pdftoppm == "" {
 		return "", fmt.Errorf("%w: poppler-utils (pdftotext, pdftoppm) is not installed", ErrEngineMissing)
 	}
@@ -140,7 +155,7 @@ func (e Engine) extractPDF(ctx context.Context, path, languages string) (string,
 	}
 	var parts []string
 	for _, p := range pages {
-		out, err := e.tesseract(ctx, p, languages)
+		out, err := e.readImage(ctx, p, languages, turn)
 		if err != nil {
 			return "", err
 		}
@@ -194,6 +209,119 @@ func dpiForPageSizes(pdfinfo string) int {
 	return max(1, min(ocrDPI, fit))
 }
 
+// readImage reads one page image. The page is turned first: by the document's own
+// turn when the user has set one, otherwise by the orientation Tesseract detects.
+func (e Engine) readImage(ctx context.Context, input, languages string, turn int) (string, error) {
+	deg := turn
+	if deg == 0 {
+		deg = e.orientation(ctx, input)
+	}
+	if deg == 0 {
+		return e.tesseract(ctx, input, languages)
+	}
+	turned, err := turnedCopy(input, deg)
+	if err != nil {
+		if turn != 0 {
+			return "", err
+		}
+		// Detection only suggested a turn and the image cannot be decoded here, so read
+		// it as it is rather than fail a document that OCR could still read.
+		return e.tesseract(ctx, input, languages)
+	}
+	defer os.Remove(turned)
+	return e.tesseract(ctx, turned, languages)
+}
+
+// orientation asks Tesseract how far the page is turned, in degrees clockwise to make
+// it upright. It returns 0 when the page is upright, when Tesseract is unsure, or when
+// the orientation data is not installed.
+func (e Engine) orientation(ctx context.Context, input string) int {
+	out, err := run(ctx, e.Tesseract, input, "stdout", "--psm", "0")
+	if err != nil {
+		return 0
+	}
+	return parseOrientation(out)
+}
+
+// parseOrientation reads the Rotate and Orientation confidence lines of Tesseract's
+// orientation output, and returns the turn only when Tesseract is confident in it.
+func parseOrientation(out string) int {
+	rotate := 0
+	confidence := 0.0
+	for _, line := range strings.Split(out, "\n") {
+		key, value, ok := strings.Cut(line, ":")
+		if !ok {
+			continue
+		}
+		value = strings.TrimSpace(value)
+		switch strings.TrimSpace(key) {
+		case "Rotate":
+			rotate, _ = strconv.Atoi(value)
+		case "Orientation confidence":
+			confidence, _ = strconv.ParseFloat(value, 64)
+		}
+	}
+	rotate = ((rotate % 360) + 360) % 360
+	if rotate%90 != 0 || confidence < minOrientationConfidence {
+		return 0
+	}
+	return rotate
+}
+
+// turnedCopy writes the image at input, turned clockwise by deg, to a new temporary
+// PNG and returns its path. The original file is not changed.
+func turnedCopy(input string, deg int) (string, error) {
+	f, err := os.Open(input)
+	if err != nil {
+		return "", err
+	}
+	src, _, err := image.Decode(f)
+	f.Close()
+	if err != nil {
+		return "", fmt.Errorf("turn page: %w", err)
+	}
+	out, err := os.CreateTemp("", "archivr-turn-*.png")
+	if err != nil {
+		return "", err
+	}
+	if err := png.Encode(out, rotate(src, deg)); err != nil {
+		out.Close()
+		os.Remove(out.Name())
+		return "", err
+	}
+	if err := out.Close(); err != nil {
+		os.Remove(out.Name())
+		return "", err
+	}
+	return out.Name(), nil
+}
+
+// rotate returns src turned clockwise by deg, which must be 90, 180 or 270.
+func rotate(src image.Image, deg int) *image.RGBA {
+	b := src.Bounds()
+	w, h := b.Dx(), b.Dy()
+	size := image.Rect(0, 0, w, h)
+	if deg != 180 {
+		size = image.Rect(0, 0, h, w) // a quarter turn swaps the width and height
+	}
+	dst := image.NewRGBA(size)
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			c := src.At(b.Min.X+x, b.Min.Y+y)
+			switch deg {
+			case 90:
+				dst.Set(h-1-y, x, c)
+			case 180:
+				dst.Set(w-1-x, h-1-y, c)
+			case 270:
+				dst.Set(y, w-1-x, c)
+			}
+		}
+	}
+	return dst
+}
+
+// tesseract runs OCR on one image file.
 func (e Engine) tesseract(ctx context.Context, input, languages string) (string, error) {
 	out, err := run(ctx, e.Tesseract, input, "stdout", "-l", languages)
 	if err != nil {

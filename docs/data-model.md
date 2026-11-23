@@ -38,7 +38,7 @@ One row per archived file.
 | `source_ref` | `name\|size` for uploads and watch files, Message-ID for mail, `host#id` (the Paperless server and document ID) for Paperless. |
 | `ocr_status` | `pending`, `done`, `failed` or `skipped` (no OCR engine installed). |
 | `ocr_error` | Last error message from OCR, empty otherwise. |
-| `rotation` | `0`, `90`, `180` or `270`: degrees clockwise the browser turns the document for display. Display metadata only, the file on disk is never rotated. Default `0`, set by the rotate buttons. |
+| `rotation` | `0`, `90`, `180` or `270`: degrees clockwise the browser turns the document for display, and OCR turns its pages the same way. The file on disk is never rotated. Default `0`, set by the rotate buttons. Changing it reads the text again. |
 | `valid_until` | `YYYY-MM-DD`, the last day the document is valid, or `NULL` when it does not expire. The day after, a sweep moves the document into the Trash folder. The date stays on the document. Taking an expired document out of Trash clears it, so it is not trashed again. |
 | `private_owner_id` | `NULL` for nearly every document: it is private through its folder. Set only when a document leaves a private folder for the shared Trash, by hand or by expiry, so it stays hidden from other users there. Moving it anywhere else clears it. `ON DELETE RESTRICT`, like the folder column. |
 | `created_at`, `updated_at` | UTC timestamps. |

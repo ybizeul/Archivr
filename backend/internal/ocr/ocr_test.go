@@ -8,6 +8,7 @@ import (
 	"image/png"
 	"io"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -16,6 +17,8 @@ import (
 	"golang.org/x/image/draw"
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/basicfont"
+	"golang.org/x/image/font/gofont/goregular"
+	"golang.org/x/image/font/opentype"
 	"golang.org/x/image/math/fixed"
 
 	"github.com/archivr/backend/internal/archive"
@@ -86,7 +89,7 @@ func TestPendingDocumentsAreRequeuedAndSkippedWithoutEngine(t *testing.T) {
 }
 
 func TestEngineWithoutTesseractReportsMissing(t *testing.T) {
-	_, err := Engine{}.Extract(context.Background(), "x.pdf", "application/pdf", "eng")
+	_, err := Engine{}.Extract(context.Background(), "x.pdf", "application/pdf", "eng", 0)
 	if err == nil {
 		t.Fatal("no error from an engine without tesseract")
 	}
@@ -140,13 +143,127 @@ func TestTesseractReadsRenderedText(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	text, err := e.Extract(ctx, file, "image/png", "eng")
+	text, err := e.Extract(ctx, file, "image/png", "eng", 0)
 	if err != nil {
 		t.Fatalf("extract: %v", err)
 	}
 	if !strings.Contains(strings.ToLower(text), "electricity") {
 		t.Fatalf("OCR text = %q, want it to contain ELECTRICITY", text)
 	}
+}
+
+// A page scanned sideways is read by detecting its orientation, and also when the
+// user has turned it by hand. Both turns of the same page must give the same text.
+func TestTesseractReadsSidewaysText(t *testing.T) {
+	e := NewEngine()
+	if e.Tesseract == "" {
+		t.Skip("tesseract not installed")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	// Orientation detection needs a page with several lines of text, as a scan has.
+	// One line is too little for Tesseract to judge the orientation.
+	upright := renderLines(t, "ELECTRICITY BILL 2026", "Total due 42 euros", "Payment before 14 October", "Account number 88213")
+	// Text that runs bottom to top: the page is turned 90 degrees counter-clockwise,
+	// so it takes a clockwise turn of 90 to face up.
+	sideways := encodePNG(t, rotate(decodePNG(t, upright), 270))
+	file := filepath.Join(t.TempDir(), "sideways.png")
+	if err := os.WriteFile(file, sideways, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, turn := range []int{0, 90} {
+		text, err := e.Extract(ctx, file, "image/png", "eng", turn)
+		if err != nil {
+			t.Fatalf("turn %d: extract: %v", turn, err)
+		}
+		if !strings.Contains(strings.ToLower(text), "electricity") {
+			t.Fatalf("turn %d: OCR text = %q, want it to contain ELECTRICITY", turn, text)
+		}
+	}
+}
+
+// Tesseract's orientation output: Rotate is the clockwise turn that makes the page upright.
+func TestParseOrientation(t *testing.T) {
+	const sideways = `Page number: 0
+Orientation in degrees: 270
+Rotate: 90
+Orientation confidence: 2.08
+Script: Latin
+Script confidence: 0.95
+`
+	const upright = `Page number: 0
+Orientation in degrees: 0
+Rotate: 0
+Orientation confidence: 2.28
+`
+	cases := []struct {
+		name string
+		out  string
+		want int
+	}{
+		{"sideways page is turned", sideways, 90},
+		{"upright page is left alone", upright, 0},
+		{"a turn of 270 is kept", "Rotate: 270\nOrientation confidence: 1.89\n", 270},
+		{"unsure detection is ignored", "Rotate: 180\nOrientation confidence: 0.4\n", 0},
+		{"unreadable output is ignored", "Too few characters. Skipping this page\n", 0},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := parseOrientation(c.out); got != c.want {
+				t.Fatalf("turn = %d, want %d", got, c.want)
+			}
+		})
+	}
+}
+
+// rotate turns clockwise: the top-left pixel ends up top-right, and the top-right
+// pixel ends up bottom-right, for a quarter turn. The size swaps for a quarter turn.
+func TestRotateTurnsClockwise(t *testing.T) {
+	src := image.NewRGBA(image.Rect(0, 0, 3, 2))
+	topLeft := color.RGBA{R: 255, A: 255}
+	topRight := color.RGBA{G: 255, A: 255}
+	src.Set(0, 0, topLeft)
+	src.Set(2, 0, topRight)
+
+	q := rotate(src, 90)
+	if q.Bounds().Dx() != 2 || q.Bounds().Dy() != 3 {
+		t.Fatalf("size after 90 = %v, want 2x3", q.Bounds())
+	}
+	if q.At(1, 0) != topLeft || q.At(1, 2) != topRight {
+		t.Fatalf("90: got %v and %v at the right edge", q.At(1, 0), q.At(1, 2))
+	}
+
+	// A half turn puts the top-left pixel at the bottom-right, and keeps the size.
+	h := rotate(src, 180)
+	if h.Bounds().Dx() != 3 || h.Bounds().Dy() != 2 || h.At(2, 1) != topLeft {
+		t.Fatalf("180: size %v, bottom-right %v", h.Bounds(), h.At(2, 1))
+	}
+
+	// Three quarter turns clockwise is one counter-clockwise turn, which undoes 90.
+	back := rotate(q, 270)
+	if back.Bounds() != src.Bounds() || back.At(0, 0) != topLeft || back.At(2, 0) != topRight {
+		t.Fatalf("270 after 90 did not restore the page")
+	}
+}
+
+func decodePNG(t *testing.T, data []byte) image.Image {
+	t.Helper()
+	img, err := png.Decode(bytes.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return img
+}
+
+func encodePNG(t *testing.T, img image.Image) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
 }
 
 // renderText draws text in a basic font, scaled up so Tesseract can read it.
@@ -170,6 +287,28 @@ func renderText(t *testing.T, s string) []byte {
 		t.Fatal(err)
 	}
 	return buf.Bytes()
+}
+
+// renderLines draws a page of text, an A4 sheet at 150 dpi, with a proportional font
+// as a scan would show it. Each line starts on its own row.
+func renderLines(t *testing.T, lines ...string) []byte {
+	t.Helper()
+	ttf, err := opentype.Parse(goregular.TTF)
+	if err != nil {
+		t.Fatal(err)
+	}
+	face, err := opentype.NewFace(ttf, &opentype.FaceOptions{Size: 28, DPI: 150})
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := image.NewRGBA(image.Rect(0, 0, 1240, 1754))
+	draw.Draw(page, page.Bounds(), image.White, image.Point{}, draw.Src)
+	d := &font.Drawer{Dst: page, Src: image.NewUniform(color.Black), Face: face}
+	for i, line := range lines {
+		d.Dot = fixed.P(120, 200+i*110)
+		d.DrawString(line)
+	}
+	return encodePNG(t, page)
 }
 
 func waitForStatus(t *testing.T, st *store.Store, id int64, want string) store.Document {
