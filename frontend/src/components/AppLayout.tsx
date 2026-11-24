@@ -10,6 +10,7 @@ import { DATE_LOCALES, setDateLocalePref, useDateLocalePref } from '../lib/dateL
 import { browserLocale, datePattern, folderLabel, formatDate, formatDateInput } from '../lib/format'
 import { fold } from '../lib/fold'
 import { useLibraryLocation } from '../lib/libraryLocation'
+import { GlobalDropZone } from './GlobalDropZone'
 import { UploadButton } from './UploadButton'
 
 export function AppLayout() {
@@ -123,6 +124,7 @@ export function AppLayout() {
       )}
 
       <ArchiveSpotlight />
+      <GlobalDropZone />
     </AppShell>
   )
 }
