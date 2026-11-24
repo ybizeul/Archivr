@@ -93,6 +93,8 @@ export function TriagePage() {
   const [bulkRunning, setBulkRunning] = useState(false)
   // Documents ticked in the queue. When none in the view is ticked, File all covers the whole view.
   const [checkedIds, setCheckedIds] = useState<Set<number>>(() => new Set())
+  // The last document whose box was clicked: the other end of a shift-click range.
+  const lastCheckedId = useRef(0)
   const folderList = useFolders()
 
   const allItems = queue.items
@@ -136,13 +138,21 @@ export function TriagePage() {
   // Only ticked documents that are in the current view count; nothing ticked means the whole view.
   const checkedItems = items.filter((d) => checkedIds.has(d.id))
   const bulkTargets = checkedItems.length > 0 ? checkedItems : items
-  const setChecked = (id: number, on: boolean) =>
+  // Shift-click ticks (or unticks) every document between the last one clicked and this one.
+  const setChecked = (id: number, on: boolean, range = false) => {
+    const from = items.findIndex((d) => d.id === lastCheckedId.current)
+    const to = items.findIndex((d) => d.id === id)
+    const ids = range && from !== -1 && to !== -1 ? items.slice(Math.min(from, to), Math.max(from, to) + 1).map((d) => d.id) : [id]
+    lastCheckedId.current = id
     setCheckedIds((prev) => {
       const next = new Set(prev)
-      if (on) next.add(id)
-      else next.delete(id)
+      for (const i of ids) {
+        if (on) next.add(i)
+        else next.delete(i)
+      }
       return next
     })
+  }
   const clearFilters = () => {
     setTypeFilter(null)
     setCorrespondentFilter(null)
@@ -612,7 +622,7 @@ function QueueList({
   selectedId: number
   checkedIds: Set<number>
   onSelect: (id: number) => void
-  onCheck: (id: number, checked: boolean) => void
+  onCheck: (id: number, checked: boolean, range?: boolean) => void
 }) {
   const anyChecked = items.some((d) => checkedIds.has(d.id))
   return (
@@ -688,7 +698,7 @@ function QueueItem({
   selected: boolean
   checked: boolean
   onSelect: (id: number) => void
-  onCheck: (id: number, checked: boolean) => void
+  onCheck: (id: number, checked: boolean, range?: boolean) => void
 }) {
   return (
     <div className="ax-queue-row">
@@ -697,7 +707,7 @@ function QueueItem({
         size="xs"
         checked={checked}
         data-checked={checked || undefined}
-        onChange={(e) => onCheck(doc.id, e.currentTarget.checked)}
+        onChange={(e) => onCheck(doc.id, e.currentTarget.checked, (e.nativeEvent as MouseEvent).shiftKey === true)}
         aria-label={`Select No. ${doc.id} for File all`}
       />
       <QueueButton doc={doc} selected={selected} onSelect={onSelect} />
