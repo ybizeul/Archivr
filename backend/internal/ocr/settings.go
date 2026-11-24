@@ -1,6 +1,6 @@
 // Package ocr extracts searchable text from documents with Tesseract, using
 // poppler for PDFs. Extraction runs in a bounded worker pool with a timeout per
-// document. A missing binary marks documents as skipped and the app keeps running.
+// page. A missing binary marks documents as skipped and the app keeps running.
 package ocr
 
 import (
@@ -17,7 +17,7 @@ const settingsKey = "ocr"
 type Settings struct {
 	Enabled        bool   `json:"enabled"`
 	Languages      string `json:"languages"`       // Tesseract codes joined by "+", e.g. "eng+fra"
-	TimeoutSeconds int    `json:"timeout_seconds"` // per document
+	TimeoutSeconds int    `json:"timeout_seconds"` // per page
 }
 
 // DefaultSettings are used until an admin saves OCR settings.

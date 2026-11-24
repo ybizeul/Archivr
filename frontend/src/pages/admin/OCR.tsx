@@ -101,8 +101,8 @@ function OCRForm({ initial }: { initial: OCRSettings }) {
         error={languages && !/^[A-Za-z_]+(\+[A-Za-z_]+)*$/.test(languages.trim()) ? 'Use codes like eng+fra' : undefined}
       />
       <NumberInput
-        label="Time limit per document (seconds)"
-        description="Between 30 and 1800 seconds."
+        label="Time limit per page (seconds)"
+        description="Between 30 and 1800 seconds. Each page of a scan has this long to be rendered and read."
         value={timeout}
         onChange={setTimeoutSeconds}
         min={30}

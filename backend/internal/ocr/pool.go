@@ -159,9 +159,9 @@ func (p *Pool) process(ctx context.Context, id int64) {
 		return
 	}
 
-	jobCtx, cancel := context.WithTimeout(ctx, time.Duration(settings.TimeoutSeconds)*time.Second)
-	text, err := p.Engine.Extract(jobCtx, file, doc.Mime, settings.Languages, doc.Rotation)
-	cancel()
+	// The time limit is per page: Extract applies it to each page it rasterises and reads.
+	pageTimeout := time.Duration(settings.TimeoutSeconds) * time.Second
+	text, err := p.Engine.Extract(ctx, file, doc.Mime, settings.Languages, doc.Rotation, pageTimeout)
 
 	if ctx.Err() != nil {
 		return // shutting down: leave the job pending for the next start

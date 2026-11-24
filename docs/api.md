@@ -170,7 +170,7 @@ Secrets are never returned. A set secret comes back as `********`, and sending `
 | `GET` / `PUT /admin/settings/imap` | `enabled`, `imap_host`, `imap_port`, `imap_tls`, `imap_user`, `imap_password`, `imap_mailbox`, `poll_interval_seconds`. `400 INVALID_SETTINGS` for bad values. |
 | `POST /admin/settings/imap/test` | Connects and signs in using the saved settings. `{ "ok", "mailbox" }` on success, `502 IMAP_FAILED` with the server's reason otherwise. 30-second limit. |
 | `GET /admin/settings/imap/mailboxes` | Mailbox names on the server. |
-| `GET` / `PUT /admin/settings/ocr` | `enabled`, `languages` (Tesseract codes joined by `+`, such as `eng+fra`), `timeout_seconds`. The GET also reports which engines are found and which languages are installed, and `documents_missing_ocr`, the number of documents with no OCR text (OCR failed, was skipped, or stored no text). |
+| `GET` / `PUT /admin/settings/ocr` | `enabled`, `languages` (Tesseract codes joined by `+`, such as `eng+fra`), `timeout_seconds` (per page, 30 to 1800). The GET also reports which engines are found and which languages are installed, and `documents_missing_ocr`, the number of documents with no OCR text (OCR failed, was skipped, or stored no text). |
 | `POST /admin/ocr/run-missing` | Marks every document counted in `documents_missing_ocr` as pending and queues it. `202` with `{ "queued" }`. |
 
 ## Admin: Paperless import

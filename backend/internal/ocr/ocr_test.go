@@ -89,7 +89,7 @@ func TestPendingDocumentsAreRequeuedAndSkippedWithoutEngine(t *testing.T) {
 }
 
 func TestEngineWithoutTesseractReportsMissing(t *testing.T) {
-	_, err := Engine{}.Extract(context.Background(), "x.pdf", "application/pdf", "eng", 0)
+	_, err := Engine{}.Extract(context.Background(), "x.pdf", "application/pdf", "eng", 0, time.Minute)
 	if err == nil {
 		t.Fatal("no error from an engine without tesseract")
 	}
@@ -113,6 +113,89 @@ func TestDPIForPageSizesCapsLargePages(t *testing.T) {
 				t.Fatalf("dpi = %d, want %d", got, c.want)
 			}
 		})
+	}
+}
+
+func TestDPIForImageListFollowsScanResolution(t *testing.T) {
+	// Output as pdfimages -list prints it for a 150 ppi scan (header and dashed rule included).
+	scan150 := `page   num  type   width height color comp bpc  enc interp  object ID x-ppi y-ppi size ratio
+--------------------------------------------------------------------------------------------
+   1     0 image    1275  1650  rgb     3   8  jpeg   no        13  0   150   150  305K 4.9%
+   2     1 image    1275  1650  rgb     3   8  jpeg   no        17  0   150   150  240K 3.9%
+`
+	cases := []struct {
+		name string
+		list string
+		want int
+	}{
+		{"150 ppi scan renders at 150", scan150, 150},
+		{"300 ppi scan renders at 300", "   1     0 image    2550  3300  gray    1   8  jpeg   no  13  0   300   300  1M 4.9%\n", 300},
+		{"higher than 300 ppi is capped", "   1     0 image    5100  6600  rgb 3 8 jpeg no 13 0 600 600 9M 4.9%\n", 300},
+		{"below 150 ppi is raised to 150", "   1     0 image    600  800  rgb 3 8 jpeg no 13 0 72 72 80K 4.9%\n", 150},
+		{"mixed page uses the highest resolution", scan150 + "   1     1 image    800  300  rgb 3 8 jpeg no 20 0 300 300 40K 1.0%\n", 300},
+		{"smask rows are not images", "   1     0 smask    1275  1650  gray  1 8  flate  no  13  0  150  150  10K 0.1%\n", 0},
+		{"no images falls back", "page   num  type   width height color comp bpc  enc interp  object ID x-ppi y-ppi size ratio\n", 0},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := dpiForImageList(c.list); got != c.want {
+				t.Fatalf("dpi = %d, want %d", got, c.want)
+			}
+		})
+	}
+}
+
+// fakePDFEngine returns an Engine whose tools are shell stand-ins with predictable
+// timing. The PDF has three pages. Each page's Tesseract call takes 0.4 s, except page 2,
+// which takes slowPage seconds.
+func fakePDFEngine(t *testing.T, slowPage string) Engine {
+	t.Helper()
+	dir := t.TempDir()
+	stub := func(name, body string) string {
+		t.Helper()
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte("#!/bin/sh\n"+body+"\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	pagePNG := filepath.Join(dir, "page.png")
+	if err := os.WriteFile(pagePNG, []byte("not decoded"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return Engine{
+		Tesseract: stub("tesseract", `case "$1" in *page-00002*) d=`+slowPage+` ;; *) d=0.4 ;; esac; echo "page text"; exec sleep "$d"`),
+		Pdftotext: stub("pdftotext", "exit 0"),
+		Pdfinfo:   stub("pdfinfo", `printf 'Pages:          3\nPage    1 size:  612 x 792 pts\n'`),
+		Pdftoppm:  stub("pdftoppm", `for last; do :; done; cp '`+pagePNG+`' "$last-1.png"`),
+	}
+}
+
+func TestPageTimeoutIsPerPage(t *testing.T) {
+	// Three pages take about 2.4 s in all, more than the 1.5 s limit. Each page takes
+	// about 0.8 s, inside its own limit, so the whole document reads.
+	e := fakePDFEngine(t, "0.4")
+	start := time.Now()
+	text, err := e.Extract(context.Background(), "doc.pdf", "application/pdf", "eng", 0, 1500*time.Millisecond)
+	if err != nil {
+		t.Fatalf("err = %v, want the document to read", err)
+	}
+	if elapsed := time.Since(start); elapsed < 1500*time.Millisecond {
+		t.Fatalf("finished in %s: the document must run longer than one page limit for this to test anything", elapsed)
+	}
+	if n := strings.Count(text, "page text"); n != 3 {
+		t.Fatalf("read %d pages, want 3: %q", n, text)
+	}
+}
+
+func TestPageTimeoutFailsOnlyTheSlowPage(t *testing.T) {
+	e := fakePDFEngine(t, "3")
+	_, err := e.Extract(context.Background(), "doc.pdf", "application/pdf", "eng", 0, 1500*time.Millisecond)
+	if err == nil {
+		t.Fatal("err = nil, want page 2 to stop at its limit")
+	}
+	if !strings.Contains(err.Error(), "page 2") || !strings.Contains(err.Error(), "context deadline exceeded") {
+		t.Fatalf("err = %v, want page 2 stopped by the deadline", err)
 	}
 }
 
@@ -143,7 +226,7 @@ func TestTesseractReadsRenderedText(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	text, err := e.Extract(ctx, file, "image/png", "eng", 0)
+	text, err := e.Extract(ctx, file, "image/png", "eng", 0, time.Minute)
 	if err != nil {
 		t.Fatalf("extract: %v", err)
 	}
@@ -174,7 +257,7 @@ func TestTesseractReadsSidewaysText(t *testing.T) {
 	}
 
 	for _, turn := range []int{0, 90} {
-		text, err := e.Extract(ctx, file, "image/png", "eng", turn)
+		text, err := e.Extract(ctx, file, "image/png", "eng", turn, time.Minute)
 		if err != nil {
 			t.Fatalf("turn %d: extract: %v", turn, err)
 		}

@@ -78,12 +78,12 @@ SQLite runs in WAL mode, so a power loss can drop the last committed transaction
 `ocr.Engine` finds `tesseract`, `pdftotext` and `pdftoppm` on the path at startup. The result is shown in **Admin → Text recognition**.
 
 - A PDF with a text layer is read with `pdftotext`. Less than 20 characters counts as no text layer.
-- Otherwise the first 40 pages are rendered at 300 dpi and read page by page, with the configured languages.
+- Otherwise the first 40 pages are rendered and read page by page, with the configured languages. The render resolution follows the scan: the highest resolution of its embedded images, kept between 150 and 300 dpi, and lowered further for very large pages. A 150 ppi scan is rendered at 150 dpi, which is about twice as fast as 300 dpi with the same numbers read.
 - Each page image is turned before it is read. If the document has a saved rotation (set with the rotate buttons), that turn is used. Otherwise Tesseract's orientation detection finds the turn, and it is applied only when Tesseract is confident. Images are turned the same way. The file on disk is never changed.
 - Changing a document's rotation reads its text again. Documents read before this change keep their old text until **Run OCR again**.
 - If Tesseract is not installed, documents are marked `skipped`. Installing it later and pressing **Run OCR again** fixes them.
 - Work is queued on import and re-queued by a scanner every 30 seconds, so a restart never loses pending documents.
-- Each job has a time limit, set in the admin screen. Shutdown cancels running jobs, and they stay `pending` for the next start.
+- Each page has a time limit, set in the admin screen. Rendering a page and reading it both count against that page's limit, so a long scan is not cut short by the time its earlier pages took. A page that runs past its limit fails the document, with the page number in the error. Shutdown cancels running jobs, and they stay `pending` for the next start.
 
 ## Search
 

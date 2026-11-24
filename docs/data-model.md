@@ -109,7 +109,7 @@ Key and JSON value. Keys in use:
 | --- | --- |
 | `auth` | SSO settings: enable flag, issuer, client ID and secret, admin group, `disable_local_login`. |
 | `imap` | Host, port, TLS mode, user, password, mailbox, poll interval. |
-| `ocr` | Languages, time limit per document, enabled flag. |
+| `ocr` | Languages, time limit per page, enabled flag. |
 
 Secrets are stored here in plain text. They are masked in every API response.
 

@@ -32,8 +32,12 @@ const (
 	minPDFTextChars = 20
 	// maxPages bounds the work for one scanned PDF.
 	maxPages = 40
-	// ocrDPI is the resolution pages are rasterised at for OCR.
+	// ocrDPI is the highest resolution pages are rasterised at for OCR.
 	ocrDPI = 300
+	// minRenderDPI is the lowest resolution a scanned PDF is rasterised at. A scan
+	// embedded at 150 ppi gains nothing from a 300 dpi render, but a render below
+	// this floor loses detail that Tesseract needs.
+	minRenderDPI = 150
 	// minOrientationConfidence is how sure Tesseract must be before a page is turned
 	// to face up. Below it the page is read as it is, so a page with little text is
 	// never turned by mistake.
@@ -41,7 +45,7 @@ const (
 	// maxRenderEdge caps the longest edge of a rasterised page, in pixels. It is
 	// about the longest edge of an A4 page at 300 dpi. Without the cap, a scan on a
 	// very large page (poster size) rasterises to hundreds of megapixels, which
-	// takes longer than the job timeout.
+	// takes longer than the page time limit.
 	maxRenderEdge = 3510
 )
 
@@ -58,7 +62,8 @@ type Engine struct {
 	Tesseract string
 	Pdftotext string
 	Pdftoppm  string
-	Pdfinfo   string // optional: when empty, pages are rasterised at ocrDPI
+	Pdfinfo   string // page count and sizes; required for PDFs
+	Pdfimages string // optional: when empty, pages are rasterised at ocrDPI
 }
 
 // NewEngine finds the tools on PATH.
@@ -75,12 +80,13 @@ func NewEngine() Engine {
 		Pdftotext: find("pdftotext"),
 		Pdftoppm:  find("pdftoppm"),
 		Pdfinfo:   find("pdfinfo"),
+		Pdfimages: find("pdfimages"),
 	}
 }
 
 // Detect reports which tools are installed and which languages Tesseract has.
 func Detect(ctx context.Context, e Engine) Status {
-	st := Status{Tesseract: e.Tesseract != "", Poppler: e.Pdftotext != "" && e.Pdftoppm != ""}
+	st := Status{Tesseract: e.Tesseract != "", Poppler: e.Pdftotext != "" && e.Pdftoppm != "" && e.Pdfinfo != ""}
 	if !st.Tesseract {
 		return st
 	}
@@ -104,30 +110,33 @@ func Detect(ctx context.Context, e Engine) Status {
 }
 
 // Extract returns the text of a document. PDFs use the text layer when it has
-// enough text, and otherwise rasterise each page (at ocrDPI, or less for very large
-// pages) and run OCR on it.
+// enough text. Otherwise each page is rasterised and read on its own, and pageTimeout
+// is the time limit for each page: rasterising the page and reading it both count
+// against that page's limit. A single image is one page, so it gets the limit once.
 //
 // turn is how the user has turned the document, in degrees clockwise (0, 90, 180 or
 // 270). When it is not 0 it is taken as the way up and page orientation is not
 // detected. When it is 0, each page's orientation is detected and corrected.
-func (e Engine) Extract(ctx context.Context, path, mime, languages string, turn int) (string, error) {
+func (e Engine) Extract(ctx context.Context, path, mime, languages string, turn int, pageTimeout time.Duration) (string, error) {
 	if e.Tesseract == "" {
 		return "", fmt.Errorf("%w: tesseract is not installed", ErrEngineMissing)
 	}
 	switch mime {
 	case "application/pdf":
-		return e.extractPDF(ctx, path, languages, turn)
+		return e.extractPDF(ctx, path, languages, turn, pageTimeout)
 	case "image/png", "image/jpeg", "image/tiff", "image/webp":
-		return e.readImage(ctx, path, languages, turn)
+		pageCtx, cancel := context.WithTimeout(ctx, pageTimeout)
+		defer cancel()
+		return e.readImage(pageCtx, path, languages, turn)
 	}
 	return "", fmt.Errorf("no OCR for %s", mime)
 }
 
-func (e Engine) extractPDF(ctx context.Context, path, languages string, turn int) (string, error) {
-	if e.Pdftotext == "" || e.Pdftoppm == "" {
-		return "", fmt.Errorf("%w: poppler-utils (pdftotext, pdftoppm) is not installed", ErrEngineMissing)
+func (e Engine) extractPDF(ctx context.Context, path, languages string, turn int, pageTimeout time.Duration) (string, error) {
+	if e.Pdftotext == "" || e.Pdftoppm == "" || e.Pdfinfo == "" {
+		return "", fmt.Errorf("%w: poppler-utils (pdftotext, pdftoppm, pdfinfo) is not installed", ErrEngineMissing)
 	}
-	text, err := run(ctx, e.Pdftotext, "-enc", "UTF-8", path, "-")
+	text, err := runWithin(ctx, pageTimeout, e.Pdftotext, "-enc", "UTF-8", path, "-")
 	if err != nil {
 		return "", err
 	}
@@ -135,29 +144,26 @@ func (e Engine) extractPDF(ctx context.Context, path, languages string, turn int
 		return strings.TrimSpace(text), nil
 	}
 
+	info, err := runWithin(ctx, pageTimeout, e.Pdfinfo, "-f", "1", "-l", fmt.Sprint(maxPages), path)
+	if err != nil {
+		return "", err
+	}
+	pages := min(pageCount(info), maxPages)
+	if pages == 0 {
+		return "", errors.New("pdf has no pages to read")
+	}
+	dpi := e.renderDPI(ctx, path, info, pageTimeout)
+
 	dir, err := os.MkdirTemp("", "archivr-ocr-*")
 	if err != nil {
 		return "", err
 	}
 	defer os.RemoveAll(dir)
-	prefix := filepath.Join(dir, "page")
-	dpi := e.pageDPI(ctx, path)
-	if _, err := run(ctx, e.Pdftoppm, "-r", fmt.Sprint(dpi), "-png", "-l", fmt.Sprint(maxPages), path, prefix); err != nil {
-		return "", err
-	}
-	pages, err := filepath.Glob(prefix + "*.png")
-	if err != nil {
-		return "", err
-	}
-	sort.Strings(pages)
-	if len(pages) == 0 {
-		return "", errors.New("pdf has no pages to read")
-	}
 	var parts []string
-	for _, p := range pages {
-		out, err := e.readImage(ctx, p, languages, turn)
+	for page := 1; page <= pages; page++ {
+		out, err := e.readPage(ctx, path, dir, page, dpi, languages, turn, pageTimeout)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("page %d: %w", page, err)
 		}
 		if out != "" {
 			parts = append(parts, out)
@@ -166,18 +172,93 @@ func (e Engine) extractPDF(ctx context.Context, path, languages string, turn int
 	return strings.Join(parts, "\n\n"), nil
 }
 
-// pageDPI returns the resolution to rasterise the PDF at: ocrDPI, lowered when the
-// largest page would be wider or taller than maxRenderEdge pixels at that resolution.
-// If the page sizes cannot be read, it returns ocrDPI.
-func (e Engine) pageDPI(ctx context.Context, path string) int {
-	if e.Pdfinfo == "" {
-		return ocrDPI
+// readPage rasterises one page of the PDF and reads it. Both steps share the page's
+// time limit, pageTimeout, so a slow page fails on its own instead of using up the
+// time of the pages after it.
+func (e Engine) readPage(ctx context.Context, path, dir string, page, dpi int, languages string, turn int, pageTimeout time.Duration) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, pageTimeout)
+	defer cancel()
+	prefix := filepath.Join(dir, fmt.Sprintf("page-%05d", page))
+	if _, err := run(ctx, e.Pdftoppm, "-r", fmt.Sprint(dpi), "-png", "-f", fmt.Sprint(page), "-l", fmt.Sprint(page), path, prefix); err != nil {
+		return "", err
 	}
-	out, err := run(ctx, e.Pdfinfo, "-f", "1", "-l", fmt.Sprint(maxPages), path)
+	files, err := filepath.Glob(prefix + "*.png")
 	if err != nil {
-		return ocrDPI
+		return "", err
 	}
-	return dpiForPageSizes(out)
+	if len(files) != 1 {
+		return "", errors.New("page did not render")
+	}
+	defer os.Remove(files[0])
+	return e.readImage(ctx, files[0], languages, turn)
+}
+
+// runWithin is run with its own time limit of budget, on top of ctx.
+func runWithin(ctx context.Context, budget time.Duration, bin string, args ...string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, budget)
+	defer cancel()
+	return run(ctx, bin, args...)
+}
+
+// pageCount reads the "Pages:" line of pdfinfo output. It returns 0 when there is none.
+func pageCount(info string) int {
+	for _, line := range strings.Split(info, "\n") {
+		if v, ok := strings.CutPrefix(line, "Pages:"); ok {
+			n, _ := strconv.Atoi(strings.TrimSpace(v))
+			return n
+		}
+	}
+	return 0
+}
+
+// renderDPI returns the resolution to rasterise the PDF at. It starts from the resolution
+// of the scanned images (see imageDPI), so a 150 ppi scan is not rendered at 300 dpi and
+// upscaled. It is then lowered when the largest page would be wider or taller than
+// maxRenderEdge pixels at that resolution. info is the pdfinfo output for the document.
+// Where the image resolution cannot be read, ocrDPI is used.
+func (e Engine) renderDPI(ctx context.Context, path, info string, budget time.Duration) int {
+	dpi := ocrDPI
+	if e.Pdfimages != "" {
+		if d := e.imageDPI(ctx, path, budget); d > 0 {
+			dpi = d
+		}
+	}
+	return min(dpi, dpiForPageSizes(info))
+}
+
+// imageDPI returns the resolution of the images in the first maxPages pages, from
+// pdfimages -list, or 0 when none can be read. The highest image resolution wins, so a
+// page that mixes a 150 ppi scan with a 300 ppi stamp is rendered at 300.
+func (e Engine) imageDPI(ctx context.Context, path string, budget time.Duration) int {
+	out, err := runWithin(ctx, budget, e.Pdfimages, "-list", "-f", "1", "-l", fmt.Sprint(maxPages), path)
+	if err != nil {
+		return 0
+	}
+	return dpiForImageList(out)
+}
+
+// dpiForImageList reads the x-ppi column of pdfimages -list and returns the render
+// resolution for it: the highest image resolution, kept between minRenderDPI and
+// ocrDPI. It returns 0 when the output has no images.
+func dpiForImageList(list string) int {
+	best := 0
+	for _, line := range strings.Split(list, "\n") {
+		// Image rows look like "   1     0 image    1275  1650  rgb  3  8  jpeg  no  13  0  150  150  305K  4.9%".
+		// The header and the dashed rule are skipped because their type column is not "image".
+		fields := strings.Fields(line)
+		if len(fields) < 13 || fields[2] != "image" {
+			continue
+		}
+		ppi, err := strconv.Atoi(fields[12])
+		if err != nil {
+			continue
+		}
+		best = max(best, ppi)
+	}
+	if best == 0 {
+		return 0
+	}
+	return max(minRenderDPI, min(ocrDPI, best))
 }
 
 // dpiForPageSizes reads the per-page sizes that pdfinfo -f -l prints and returns the
