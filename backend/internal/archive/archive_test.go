@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -472,6 +474,75 @@ func TestOCRTextIsSearchableAndQueriesAreSafe(t *testing.T) {
 	if _, _, err := st.ListDocuments(ctx, store.DocFilter{Query: `bill") OR (x NEAR`}); err != nil {
 		t.Fatalf("hostile query failed: %v", err)
 	}
+}
+
+func TestSearchFindsDocumentByNumber(t *testing.T) {
+	svc, st, _ := newService(t)
+	ctx := context.Background()
+	target := create(t, svc, "Lease", "num-a", 0)
+	other := create(t, svc, "Notes", "num-b", 0)
+	// The other document mentions the target's number, and nothing in the target's
+	// own text is that number. Search still has to return the target, and first.
+	if err := st.InTx(ctx, func(tx *store.Store) error {
+		if err := tx.SaveOCRText(ctx, other.ID, "see No. "+strconv.FormatInt(target.ID, 10), "tesseract", "eng"); err != nil {
+			return err
+		}
+		return tx.SyncFTS(ctx, other.ID)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, q := range []string{
+		strconv.FormatInt(target.ID, 10),
+		"No. " + strconv.FormatInt(target.ID, 10),
+		"#" + strconv.FormatInt(target.ID, 10),
+	} {
+		docs, total, err := st.ListDocuments(ctx, store.DocFilter{Query: q, Sort: "relevance"})
+		if err != nil {
+			t.Fatalf("query %q: %v", q, err)
+		}
+		if total != 2 || len(docs) != 2 || docs[0].ID != target.ID || docs[1].ID != other.ID {
+			t.Fatalf("query %q: ids=%v total=%d", q, []int64{idAt(docs, 0), idAt(docs, 1)}, total)
+		}
+		if !strings.Contains(docs[1].Snippet, "\x01") {
+			t.Fatalf("query %q: text hit snippet = %q", q, docs[1].Snippet)
+		}
+	}
+
+	id := strconv.FormatInt(target.ID, 10)
+	second, total, err := st.ListDocuments(ctx, store.DocFilter{Query: id, Sort: "relevance", Limit: 1, Offset: 1})
+	if err != nil || total != 2 || len(second) != 1 || second[0].ID != other.ID {
+		t.Fatalf("second page = %+v total=%d err=%v", second, total, err)
+	}
+	byTitle, _, err := st.ListDocuments(ctx, store.DocFilter{Query: id, Sort: "title"})
+	if err != nil || len(byTitle) != 2 {
+		t.Fatalf("title sort = %+v err=%v", byTitle, err)
+	}
+
+	// A shorter number is not a prefix of the document number. The other document
+	// may still match, because its text contains the full number.
+	prefix := strconv.FormatInt(target.ID, 10)
+	prefix = prefix[:len(prefix)-1]
+	partial, _, err := st.ListDocuments(ctx, store.DocFilter{Query: prefix})
+	if err != nil {
+		t.Fatalf("prefix %q: %v", prefix, err)
+	}
+	for _, d := range partial {
+		if d.ID == target.ID {
+			t.Fatalf("prefix %q matched document %d", prefix, target.ID)
+		}
+	}
+	// The number still has to sit in the folder being searched.
+	if _, total, err := st.ListDocuments(ctx, store.DocFilter{Query: strconv.FormatInt(target.ID, 10), FolderID: target.FolderID + 1}); err != nil || total != 0 {
+		t.Fatalf("other folder total=%d err=%v", total, err)
+	}
+}
+
+func idAt(docs []store.Document, i int) int64 {
+	if i >= len(docs) {
+		return 0
+	}
+	return docs[i].ID
 }
 
 func TestTagRenameRefreshesSearch(t *testing.T) {

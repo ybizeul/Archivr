@@ -47,7 +47,7 @@ func (t *tools) register(srv *mcp.Server) {
 	}, t.listDocuments)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "search_documents",
-		Description: "Full-text search over titles, OCR text, tags, correspondents and types. Words are combined with AND and match as prefixes; accents and case are ignored. Results are ranked by relevance and carry a snippet with the matching words in **bold**. Takes the same filters as list_documents. Trash is left out unless it is the chosen folder.",
+		Description: "Search titles, OCR text, tags, correspondents and types, or a document number. Words are combined with AND and match as prefixes; accents and case are ignored. A query that is only a document number (10043, No. 10043 or #10043) returns that document first, then any document that mentions the number. Results are ranked by relevance and carry a snippet with the matching words in **bold**. Takes the same filters as list_documents. Trash is left out unless it is the chosen folder.",
 		Annotations: readOnly("Search documents"),
 	}, t.searchDocuments)
 	mcp.AddTool(srv, &mcp.Tool{
@@ -146,7 +146,7 @@ type ListInput struct {
 // SearchInput is the input of search_documents.
 type SearchInput struct {
 	Filters
-	Query string `json:"query" jsonschema:"the words to search for"`
+	Query string `json:"query" jsonschema:"words to search for, or a document number such as 10043 or No. 10043"`
 }
 
 // DocList is a page of documents.

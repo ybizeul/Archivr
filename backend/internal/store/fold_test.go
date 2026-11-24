@@ -40,6 +40,25 @@ func TestFTSQueryFoldsAndStaysQuoted(t *testing.T) {
 	}
 }
 
+func TestDocumentNumberAcceptsTheLabelAndTheDigits(t *testing.T) {
+	cases := map[string]int64{
+		"10043": 10043, "  10043  ": 10043,
+		"No. 10043": 10043, "no.10043": 10043, "NO 10043": 10043,
+		"#10043": 10043, "# 10043": 10043,
+	}
+	for in, want := range cases {
+		got, ok := documentNumber(in)
+		if !ok || got != want {
+			t.Errorf("documentNumber(%q) = %d, %v", in, got, ok)
+		}
+	}
+	for _, in := range []string{"", "no", "notice", "10043 extra", "No. x", "010043", "0", "#"} {
+		if _, ok := documentNumber(in); ok {
+			t.Errorf("documentNumber(%q) should not be a number", in)
+		}
+	}
+}
+
 func TestListTagsIgnoresDiacritics(t *testing.T) {
 	conn, err := db.Open(context.Background(), filepath.Join(t.TempDir(), "archivr.db"))
 	if err != nil {

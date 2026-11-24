@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -46,7 +48,7 @@ type Document struct {
 	OCRError        string   `json:"ocr_error"`
 	Rotation        int      `json:"rotation"`    // degrees clockwise, display only
 	ValidUntil      *string  `json:"valid_until"` // last valid day, YYYY-MM-DD; the document is trashed after it
-	Favorite        bool     `json:"favorite"` // whether the signed-in user marked it; set by the API, not stored on the row
+	Favorite        bool     `json:"favorite"`    // whether the signed-in user marked it; set by the API, not stored on the row
 	Snippet         string   `json:"snippet,omitempty"`
 }
 
@@ -76,7 +78,7 @@ type NewDocumentRow struct {
 
 // DocFilter narrows and orders a document listing.
 type DocFilter struct {
-	Query           string // full-text query, words are ANDed and prefix-matched
+	Query           string // full-text query, words are ANDed and prefix-matched; a bare document number also matches that document
 	FolderID        int64  // 0 for any folder
 	Subtree         bool   // include documents in subfolders of FolderID
 	TypeID          int64  // 0 for any type
@@ -175,23 +177,13 @@ func (s *Store) ListDocuments(ctx context.Context, f DocFilter) ([]Document, int
 	from := docFrom
 	var where []string
 	var args []any
-	snippet := "''"
-	match := FTSQuery(f.Query)
-	if match != "" {
-		from += ` JOIN documents_fts ON documents_fts.document_id = d.id`
-		where = append(where, `documents_fts MATCH ?`)
-		args = append(args, match)
-		// Highlight markers are control characters, never HTML: the snippet text comes from OCR,
-		// and the client renders it as plain text with the markers turned into <mark> elements.
-		// The folded column is for matching only. Snippets stay on the original
-		// text, so an accented word is still shown with its accent.
-		snippet = `COALESCE(
-			NULLIF(snippet(documents_fts, 1, char(1), char(2), '…', 16), ''),
-			NULLIF(snippet(documents_fts, 0, char(1), char(2), '…', 16), ''),
-			NULLIF(snippet(documents_fts, 2, char(1), char(2), '…', 16), ''),
-			NULLIF(snippet(documents_fts, 3, char(1), char(2), '…', 16), ''),
-			'')`
+	// "No. 10043" is the label on the light table, not two search words.
+	queryText := f.Query
+	number, byNumber := documentNumber(f.Query)
+	if byNumber {
+		queryText = strconv.FormatInt(number, 10)
 	}
+	match := FTSQuery(queryText)
 	if f.FolderID != 0 {
 		if f.Subtree {
 			where = append(where, `d.folder_id IN (
@@ -236,6 +228,19 @@ func (s *Store) ListDocuments(ctx context.Context, f DocFilter) ([]Document, int
 		where = append(where, vis)
 		args = append(args, visArgs...)
 	}
+	// FTS5 rejects MATCH combined with OR, so a document number is a second query:
+	// the row with that id, plus every document whose text matches the digits.
+	if byNumber && match != "" {
+		return s.listByDocumentNumber(ctx, f, number, match, queryText, from, where, args)
+	}
+
+	snippet := "''"
+	if match != "" {
+		from += ` JOIN documents_fts ON documents_fts.document_id = d.id`
+		where = append(where, `documents_fts MATCH ?`)
+		args = append(args, match)
+		snippet = ftsSnippet
+	}
 	clause := ""
 	if len(where) > 0 {
 		clause = " WHERE " + strings.Join(where, " AND ")
@@ -272,21 +277,137 @@ func (s *Store) ListDocuments(ctx context.Context, f DocFilter) ([]Document, int
 		return nil, 0, err
 	}
 
-	ids := make([]int64, len(out))
-	for i, d := range out {
+	if err := s.attachTagsAndSnippets(ctx, queryText, out); err != nil {
+		return nil, 0, err
+	}
+	return out, total, nil
+}
+
+// Highlight markers are control characters, never HTML: the snippet text comes from OCR,
+// and the client renders it as plain text with the markers turned into <mark> elements.
+// The folded column is for matching only. Snippets stay on the original
+// text, so an accented word is still shown with its accent.
+const ftsSnippet = `COALESCE(
+			NULLIF(snippet(documents_fts, 1, char(1), char(2), '…', 16), ''),
+			NULLIF(snippet(documents_fts, 0, char(1), char(2), '…', 16), ''),
+			NULLIF(snippet(documents_fts, 2, char(1), char(2), '…', 16), ''),
+			NULLIF(snippet(documents_fts, 3, char(1), char(2), '…', 16), ''),
+			'')`
+
+// listByDocumentNumber returns the document with this number, then every document
+// whose text matches those digits. The number row is first when the list is ranked
+// by relevance. Filters apply to both.
+func (s *Store) listByDocumentNumber(ctx context.Context, f DocFilter, number int64, match, queryText, from string, where []string, args []any) ([]Document, int, error) {
+	filter := ""
+	if len(where) > 0 {
+		filter = strings.Join(where, " AND ") + " AND "
+	}
+	pinWhere := " WHERE " + filter + "d.id = ?"
+	pinArgs := append(append([]any{}, args...), number)
+	ftsFrom := from + ` JOIN documents_fts ON documents_fts.document_id = d.id`
+	ftsWhere := " WHERE " + filter + "documents_fts MATCH ? AND d.id <> ?"
+	ftsArgs := append(append([]any{}, args...), match, number)
+
+	var pinTotal, textTotal int
+	if err := s.q.QueryRowContext(ctx, `SELECT COUNT(*)`+from+pinWhere, pinArgs...).Scan(&pinTotal); err != nil {
+		return nil, 0, fmt.Errorf("count documents: %w", err)
+	}
+	if err := s.q.QueryRowContext(ctx, `SELECT COUNT(*)`+ftsFrom+ftsWhere, ftsArgs...).Scan(&textTotal); err != nil {
+		return nil, 0, fmt.Errorf("count documents: %w", err)
+	}
+
+	limit := f.Limit
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	// pin is 0 for the numbered document so relevance order shows it first.
+	// Other sorts ignore pin and use the same columns as a normal listing.
+	pin := 0
+	order := "pin, rank, id DESC"
+	if !numberFirst(f.Sort) {
+		pin = 1
+		order = numberOrder(f.Sort)
+	}
+	list := `SELECT id, title, document_date, created_at, updated_at, type_id, type_name, type_color,
+		correspondent_id, correspondent, folder_id, folder_name, folder_path,
+		filename, mime, size, sha256, source, source_ref, ocr_status, ocr_error, rotation, valid_until, snippet
+		FROM (
+			SELECT d.id AS id, d.title AS title, d.document_date AS document_date, d.created_at AS created_at, d.updated_at AS updated_at,
+			       d.type_id AS type_id, t.name AS type_name, t.color AS type_color, d.correspondent_id AS correspondent_id,
+			       COALESCE(c.name, '') AS correspondent, d.folder_id AS folder_id, f.name AS folder_name, f.path AS folder_path,
+			       d.filename AS filename, d.mime AS mime, d.size AS size, d.sha256 AS sha256, d.source AS source, d.source_ref AS source_ref,
+			       d.ocr_status AS ocr_status, d.ocr_error AS ocr_error, d.rotation AS rotation, d.valid_until AS valid_until,
+			       '' AS snippet, ` + strconv.Itoa(pin) + ` AS pin, 0.0 AS rank` + from + pinWhere + `
+			UNION ALL
+			SELECT d.id, d.title, d.document_date, d.created_at, d.updated_at,
+			       d.type_id, t.name, t.color, d.correspondent_id,
+			       COALESCE(c.name, ''), d.folder_id, f.name, f.path,
+			       d.filename, d.mime, d.size, d.sha256, d.source, d.source_ref,
+			       d.ocr_status, d.ocr_error, d.rotation, d.valid_until,
+			       ` + ftsSnippet + `, 1, ` + searchRank + ftsFrom + ftsWhere + `
+		) ORDER BY ` + order + ` LIMIT ? OFFSET ?`
+	rows, err := s.q.QueryContext(ctx, list, append(append(append([]any{}, pinArgs...), ftsArgs...), limit, f.Offset)...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list documents: %w", err)
+	}
+	var out []Document
+	for rows.Next() {
+		var snip string
+		d, err := scanDocument(rows, &snip)
+		if err != nil {
+			rows.Close()
+			return nil, 0, err
+		}
+		d.Snippet = snip
+		out = append(out, d)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+	if err := s.attachTagsAndSnippets(ctx, queryText, out); err != nil {
+		return nil, 0, err
+	}
+	return out, pinTotal + textTotal, nil
+}
+
+func numberFirst(sort string) bool {
+	switch sort {
+	case "oldest", "date", "title":
+		return false
+	default:
+		return true
+	}
+}
+
+// numberOrder sorts a number search by result column names. The compound query
+// has no table aliases, so it cannot reuse orderBy.
+func numberOrder(sort string) string {
+	switch sort {
+	case "oldest":
+		return "id ASC"
+	case "date":
+		return "document_date IS NULL, document_date DESC, id DESC"
+	case "title":
+		return "title COLLATE NOCASE, id"
+	default:
+		return "pin, rank, id DESC"
+	}
+}
+
+func (s *Store) attachTagsAndSnippets(ctx context.Context, query string, docs []Document) error {
+	ids := make([]int64, len(docs))
+	for i, d := range docs {
 		ids[i] = d.ID
 	}
 	tags, err := s.tagNames(ctx, ids)
 	if err != nil {
-		return nil, 0, err
+		return err
 	}
-	for i := range out {
-		out[i].Tags = nonNilTags(tags[out[i].ID])
+	for i := range docs {
+		docs[i].Tags = nonNilTags(tags[docs[i].ID])
 	}
-	if err := s.fillFoldedSnippets(ctx, f.Query, out); err != nil {
-		return nil, 0, err
-	}
-	return out, total, nil
+	return s.fillFoldedSnippets(ctx, query, docs)
 }
 
 func orderBy(sort string, ranked bool) string {
@@ -323,6 +444,29 @@ func FTSQuery(q string) string {
 		quoted[i] = `"` + t + `"*`
 	}
 	return strings.Join(quoted, " ")
+}
+
+// documentNumberPattern matches a query that is only a document number.
+// "No." is the label shown next to the number; "#" is accepted as the same thing.
+var documentNumberPattern = regexp.MustCompile(`^(?:no\.?\s*|#\s*)?(\d+)$`)
+
+// documentNumber reports n when q is only that document number: "10043",
+// "No. 10043", "No 10043" or "#10043". Leading zeros are left as text, so a
+// padded string is not read as a shorter number.
+func documentNumber(q string) (int64, bool) {
+	q = strings.ToLower(strings.TrimSpace(q))
+	m := documentNumberPattern.FindStringSubmatch(q)
+	if m == nil {
+		return 0, false
+	}
+	if len(m[1]) > 1 && m[1][0] == '0' {
+		return 0, false
+	}
+	n, err := strconv.ParseInt(m[1], 10, 64)
+	if err != nil || n <= 0 {
+		return 0, false
+	}
+	return n, true
 }
 
 // InsertDocumentRow adds a document row and returns its ID.

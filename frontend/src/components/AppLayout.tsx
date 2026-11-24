@@ -202,7 +202,7 @@ function UserMenu() {
   )
 }
 
-/** Cmd/Ctrl+K: jump to a view, or find a document by its text, title or tags. */
+/** Cmd/Ctrl+K: jump to a view, or find a document by its number, text, title or tags. */
 function ArchiveSpotlight() {
   const navigate = useNavigate()
   const [query, setQuery] = useState('')
@@ -251,7 +251,7 @@ function ArchiveSpotlight() {
         })
       }}
       searchProps={{
-        placeholder: 'Find a document, or go to…',
+        placeholder: 'Find a document by number or text, or go to…',
         leftSection: <IconSearch size={18} stroke={1.6} />,
         onChange: (e) => setQuery(e.currentTarget.value),
       }}

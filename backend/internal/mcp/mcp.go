@@ -20,7 +20,7 @@ import (
 const instructions = `Archivr is a private document archive. Documents are filed in folders and carry a title, ` +
 	`a date, a type, a correspondent and tags. Scanned documents have OCR text.
 Use list_folders to browse the folder tree, list_documents to list a folder, search_documents for full-text ` +
-	`search, and get_document to read one document with its metadata and text. list_catalog shows the document ` +
+	`search or a document number, and get_document to read one document with its metadata and text. list_catalog shows the document ` +
 	`types, correspondents and tags that can be used as filters. get_document_file returns the original file.
 Everything is read-only.`
 

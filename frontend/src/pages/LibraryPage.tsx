@@ -197,7 +197,7 @@ export function LibraryPage() {
         <Box className="ax-filters">
           <TextInput
             className="ax-filter-search"
-            placeholder="Search text, titles, tags"
+            placeholder="Search text, titles, tags, or a number"
             leftSection={<IconSearch size={16} stroke={1.6} />}
             rightSection={
               qText ? (
