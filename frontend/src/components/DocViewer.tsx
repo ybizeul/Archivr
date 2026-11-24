@@ -2,7 +2,7 @@ import { lazy, Suspense, useState, type CSSProperties } from 'react'
 import { ActionIcon, Box, Group, Loader, Tooltip } from '@mantine/core'
 import { useElementSize } from '@mantine/hooks'
 import { notifications } from '@mantine/notifications'
-import { IconRotate, IconRotateClockwise, IconZoomIn, IconZoomOut } from '@tabler/icons-react'
+import { IconDownload, IconRotate, IconRotateClockwise, IconZoomIn, IconZoomOut } from '@tabler/icons-react'
 import { usePatchDocument } from '../api/queries'
 import { errorMessage } from '../lib/format'
 
@@ -24,10 +24,17 @@ interface DocViewerProps {
 
 const normalise = (deg: number) => ((deg % 360) + 360) % 360
 
+/** Same file URL the viewer loads, asked for as an attachment so the browser saves it. */
+function withDownload(src: string): string {
+  const join = src.includes('?') ? '&' : '?'
+  return `${src}${join}download=1`
+}
+
 /**
  * Shows the stored file: PDFs drawn with pdf.js, images with a click-to-zoom.
- * The rotate buttons turn the view and remember the turn on the document. The file itself
- * is never changed: rotation is only a hint for how the browser draws it.
+ * Download sits on the left of the tool row. The rotate buttons turn the view and remember
+ * the turn on the document. The file itself is never changed: rotation is only a hint for
+ * how the browser draws it.
  */
 export function DocViewer({ id, src: srcProp, mime, title, rotation = 0, readOnly = false }: DocViewerProps) {
   const src = srcProp ?? `/api/v1/documents/${id}/file`
@@ -54,29 +61,42 @@ export function DocViewer({ id, src: srcProp, mime, title, rotation = 0, readOnl
 
   return (
     <Box className="ax-viewer">
-      <Group className="ax-viewer-tools" gap={6} justify="flex-end" wrap="nowrap">
-        <Tooltip label="Rotate left">
-          <ActionIcon variant="default" size="lg" aria-label="Rotate left" onClick={() => rotate(-90)}>
-            <IconRotate size={18} stroke={1.6} />
+      <Group className="ax-viewer-tools" gap={6} justify="space-between" wrap="nowrap">
+        <Tooltip label="Download">
+          <ActionIcon
+            component="a"
+            href={withDownload(src)}
+            variant="default"
+            size="lg"
+            aria-label="Download"
+          >
+            <IconDownload size={18} stroke={1.6} />
           </ActionIcon>
         </Tooltip>
-        <Tooltip label="Rotate right">
-          <ActionIcon variant="default" size="lg" aria-label="Rotate right" onClick={() => rotate(90)}>
-            <IconRotateClockwise size={18} stroke={1.6} />
-          </ActionIcon>
-        </Tooltip>
-        {!isPdf && (
-          <Tooltip label={zoomed ? 'Fit to sheet' : 'Zoom in'}>
-            <ActionIcon
-              variant="default"
-              size="lg"
-              aria-label={zoomed ? 'Fit to sheet' : 'Zoom in'}
-              onClick={() => setZoomed((z) => !z)}
-            >
-              {zoomed ? <IconZoomOut size={18} stroke={1.6} /> : <IconZoomIn size={18} stroke={1.6} />}
+        <Group gap={6} wrap="nowrap">
+          <Tooltip label="Rotate left">
+            <ActionIcon variant="default" size="lg" aria-label="Rotate left" onClick={() => rotate(-90)}>
+              <IconRotate size={18} stroke={1.6} />
             </ActionIcon>
           </Tooltip>
-        )}
+          <Tooltip label="Rotate right">
+            <ActionIcon variant="default" size="lg" aria-label="Rotate right" onClick={() => rotate(90)}>
+              <IconRotateClockwise size={18} stroke={1.6} />
+            </ActionIcon>
+          </Tooltip>
+          {!isPdf && (
+            <Tooltip label={zoomed ? 'Fit to sheet' : 'Zoom in'}>
+              <ActionIcon
+                variant="default"
+                size="lg"
+                aria-label={zoomed ? 'Fit to sheet' : 'Zoom in'}
+                onClick={() => setZoomed((z) => !z)}
+              >
+                {zoomed ? <IconZoomOut size={18} stroke={1.6} /> : <IconZoomIn size={18} stroke={1.6} />}
+              </ActionIcon>
+            </Tooltip>
+          )}
+        </Group>
       </Group>
       {isPdf ? (
         <Suspense fallback={<Loader size="sm" m={12} />}>

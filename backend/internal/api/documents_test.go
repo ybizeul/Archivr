@@ -284,6 +284,10 @@ func TestFilingUpdatesDocumentAndDeleteRemovesIt(t *testing.T) {
 	if !bytes.HasPrefix(file.Body.Bytes(), []byte("%PDF-")) {
 		t.Fatal("served body is not the PDF")
 	}
+	dl := f.do(http.MethodGet, fmt.Sprintf("/api/v1/documents/%d/file?download=1", doc.ID), nil, c)
+	if got := dl.Header().Get("Content-Disposition"); !strings.HasPrefix(got, "attachment") || !strings.Contains(got, "Electric bill.pdf") {
+		t.Fatalf("download disposition = %q", got)
+	}
 
 	// A folder that still holds documents cannot be deleted.
 	if del := f.do(http.MethodDelete, fmt.Sprintf("/api/v1/folders/%d", folder.ID), nil, c); del.Code != http.StatusConflict {

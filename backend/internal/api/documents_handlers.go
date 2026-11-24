@@ -317,7 +317,7 @@ func (s *server) replaceDocumentFile(w http.ResponseWriter, r *http.Request, use
 	writeJSON(w, http.StatusOK, doc)
 }
 
-// documentFile streams the stored file. It is served inline, so the browser can show it.
+// documentFile streams the stored file, inline so the browser can show it, or as an attachment with ?download=1.
 func (s *server) documentFile(w http.ResponseWriter, r *http.Request, user store.User) {
 	id, ok := pathID(w, r)
 	if !ok {
@@ -345,8 +345,12 @@ func (s *server) documentFile(w http.ResponseWriter, r *http.Request, user store
 		s.writeStoreError(w, err)
 		return
 	}
+	disposition := "inline"
+	if r.URL.Query().Get("download") == "1" {
+		disposition = "attachment"
+	}
 	w.Header().Set("Content-Type", doc.Mime)
-	w.Header().Set("Content-Disposition", mime.FormatMediaType("inline", map[string]string{"filename": doc.Filename}))
+	w.Header().Set("Content-Disposition", mime.FormatMediaType(disposition, map[string]string{"filename": doc.Filename}))
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Cache-Control", "private, no-cache")
 	http.ServeContent(w, r, doc.Filename, info.ModTime(), f)
